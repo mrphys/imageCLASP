@@ -1,146 +1,145 @@
-from tinydb import TinyDB, Query
-import pydicom 
+import io
 import numpy as np
 import requests
-import io
-from pydicom.uid import generate_uid, ExplicitVRLittleEndian
-from datetime import datetime
+import pydicom
+from pydicom.uid import ExplicitVRLittleEndian, generate_uid
+from tinydb import TinyDB, Query
+import pandas as pd
 
-def send_series_to_orthanc(new_dcm, old_dcm, ORTHANC, AUTH):
-    new_series_uid = generate_uid()
-    for i in range(len(new_dcm)):
-        old_dcm[i].SeriesInstanceUID = new_series_uid
-        old_dcm[i].SeriesDescription = 'Processed Series'
-        old_dcm[i].PixelData = new_dcm[i].astype(np.uint16).tobytes()
-        old_dcm[i].SOPInstanceUID = generate_uid()
+DB_PATH = "./image_clasp_db.json"
+ORTHANC = "http://localhost:8042"
+AUTH = ("orthanc","orthanc")
 
-        old_dcm[i].file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
-        old_dcm[i].is_little_endian = True
-        old_dcm[i].is_implicit_VR = False
-        
-        buffer = io.BytesIO()
-        old_dcm[i].save_as(buffer)
-        buffer.seek(0)
-        upload = requests.post(f"{ORTHANC}/instances",data=buffer.read(),auth=AUTH,headers={"Content-Type": "application/dicom", "Expect": ""})
-        upload.raise_for_status()
-    return new_series_uid
+SESSION = requests.Session()
+SESSION.auth = AUTH
+SESSION.trust_env = False
 
 
-def get_orthanc_series_data_from_uid(series_uid, ORTHANC, AUTH):
-    payload = {
-        "Level": "Series",
-        "Expand": True,
-        "Query": {
-            "SeriesInstanceUID": series_uid
+class Series:
+    def __init__(self, series_info, series_label = None, sax_processed = None, roundel_processed = None):
+        self.orthanc_id = series_info["ID"]
+        self.uid = series_info["MainDicomTags"].get("SeriesInstanceUID")
+        self.description = series_info["MainDicomTags"].get("SeriesDescription")
+        self.series_label = series_label
+        self.sax_processed = sax_processed
+        self.roundel_processed = roundel_processed
+
+    def to_dict(self):
+        record = {
+            "orthanc_series_id": self.orthanc_id,
+            "series_uid": self.uid,
+            "series_description": self.description,
+            "series_label":self.series_label,
+            "sax_processed":self.sax_processed,
+            "roundel_processed":self.roundel_processed
         }
-    }
-
-    r = requests.post(f"{ORTHANC}/tools/find", json=payload, auth=AUTH)
-    r.raise_for_status()
-    results = r.json()
-
-    if not results:
-        return None
-
-    return results[0]
+        return record
 
 
+class Study:
+    def __init__(self, study_info):
+        self.orthanc_id = study_info["ID"]
+        self.uid = study_info["MainDicomTags"].get("StudyInstanceUID")
+        self.patient_name = study_info["PatientMainDicomTags"].get("PatientName")
+        self.patient_id = study_info["PatientMainDicomTags"].get("PatientID")
+        self.patient_sex = study_info["PatientMainDicomTags"].get("PatientSex")
+        self.patient_dob = study_info["PatientMainDicomTags"].get("PatientBirthDate")
+        self.study_date = study_info["MainDicomTags"].get("StudyDate")
+        self.age = self.compute_age(self.study_date, self.patient_dob)
+        self.series_list = []
 
-def query_orthanc(DB_PATH, ORTHANC, AUTH):
-    db = TinyDB(DB_PATH)
-    Study = Query()
-
-    payload = {
-        "Level": "Study",
-        "Expand": True,
-        "Query": {}
-    }
-
-    r = requests.post(f"{ORTHANC}/tools/find", json=payload, auth=AUTH)
-    r.raise_for_status()
-
-    studies = r.json()
-    target_list = ['short', 'SAX', 'KT']
-
-    db_studies_present = []
-    for study in db:
-        db_studies_present.append(study["orthanc_study_id"])
-
-    for study in studies:
-        if study["ID"] not in db_studies_present:
-            print(study["ID"])
-            dob = study["PatientMainDicomTags"].get("PatientBirthDate")
-            dos = study["MainDicomTags"].get("StudyDate")
-            age = compute_age(dos, dob)
-            record = {
-                "orthanc_study_id": study["ID"],
-                "study_uid": study["MainDicomTags"].get("StudyInstanceUID"),
-                "patient_name": study["PatientMainDicomTags"].get("PatientName"),
-                "patient_id": study["PatientMainDicomTags"].get("PatientID"),
-                "patient_sex": study["PatientMainDicomTags"].get("PatientSex"),
-                "patient_dob": dob,
-                "patient_age": age,
-                "study_date": dos,
-                "series": []
-            }
-
-            # Get series belonging to this study
-            study_id = study["ID"]
-            series_list = requests.get(f"{ORTHANC}/studies/{study_id}/series",auth=AUTH).json()
-
-            for i in range(len(series_list)):
-                series_info = series_list[i]
-                series_desc = series_info["MainDicomTags"].get("SeriesDescription")
-                series_record = {
-                    "orthanc_series_id": series_info["ID"],
-                    "series_uid": series_info["MainDicomTags"].get("SeriesInstanceUID"),
-                    "series_description": series_desc,
-                    "is_target": False,
-                    "DL_processed": False,
-                }
-
-                # this is where a piipeline would be inserted
-                if any(w in series_desc for w in target_list):
-                    series_record["is_target"] = True
-                    series_record["DL_processed"] = True
-                    instances = requests.get(f"{ORTHANC}/series/{series_info['ID']}/instances",auth=AUTH).json()
-
-                    new_series_ims = []
-                    old_dcms = []
-                    for inst in instances:
-
-                        instance_id = inst["ID"]
-
-                        r = requests.get(f"{ORTHANC}/instances/{instance_id}/file", auth=AUTH)
-
-                        # Read DICOM in memory
-                        ds = pydicom.dcmread(io.BytesIO(r.content))
-                        #this is where DL segmentation would be inserted
-                        new_im = abs(np.float16(ds.pixel_array)-np.max(ds.pixel_array))#DL segmentation
-                        new_series_ims.append(new_im)
-                        old_dcms.append(ds)
-                    
-                    processed_uid = send_series_to_orthanc(new_series_ims, old_dcms, ORTHANC, AUTH)
-                    new_series_json = get_orthanc_series_data_from_uid(processed_uid, ORTHANC, AUTH)
-                    new_record = {
-                    "orthanc_series_id": new_series_json["ID"],
-                    "series_uid": new_series_json["MainDicomTags"].get("SeriesInstanceUID"),
-                    "series_description": new_series_json["MainDicomTags"].get("SeriesDescription"),
-                    "is_target": True,
-                    "DL_processed": True,
-                    "roundel_processed": False,
-                    "associated_original_series_uid": series_record["series_uid"]
-                    }
-                    record["series"].append(new_record)
-                    
-                db.upsert(record, Study.study_uid == record["study_uid"])
-                    
-def compute_age(dos, dob):
-    if dob is None or dos is None:
-        return np.nan
-    else:
-        try:
-            age = datetime.strptime(dos, "%Y%m%d") - datetime.strptime(dob, "%Y%m%d")
-            return age.days // 365
-        except ValueError:
+    @staticmethod
+    def compute_age(dos, dob):
+        if not dos or not dob:
             return np.nan
+        dos_dt = pd.to_datetime(dos, format="%Y%m%d", errors="coerce")
+        dob_dt = pd.to_datetime(dob, format="%Y%m%d", errors="coerce")
+        if pd.isna(dos_dt) or pd.isna(dob_dt):
+            return np.nan
+        return (dos_dt - dob_dt).days // 365
+
+    def to_dict(self):
+        return {
+            "orthanc_study_id": self.orthanc_id,
+            "study_uid": self.uid,
+            "patient_name": self.patient_name,
+            "patient_id": self.patient_id,
+            "patient_sex": self.patient_sex,
+            "patient_dob": self.patient_dob,
+            "patient_age": self.age,
+            "study_date": self.study_date,
+            "series": [s.to_dict() for s in self.series_list]
+        }
+
+def fetch_studies():
+    payload = {"Level": "Study", "Expand": True, "Query": {}}
+    r = SESSION.post(f"{ORTHANC}/tools/find", json=payload, auth=AUTH)
+    r.raise_for_status()
+    return r.json()
+
+def fetch_series_for_study(study_id):
+    r = SESSION.get(f"{ORTHANC}/studies/{study_id}/series", auth=AUTH)
+    r.raise_for_status()
+    return r.json()
+
+def fetch_instances_for_series(series_id):
+    r = SESSION.get(f"{ORTHANC}/series/{series_id}/instances", auth=AUTH)
+    r.raise_for_status()
+    return r.json()
+
+def fetch_dicom(instance_id):
+    r = SESSION.get(f"{ORTHANC}/instances/{instance_id}/file", auth=AUTH)
+    r.raise_for_status()
+    return pydicom.dcmread(io.BytesIO(r.content))
+
+# def upload_processed_series(new_images, old_dcms):
+#     new_series_uid = generate_uid()
+#     for i, ds in enumerate(old_dcms):
+#         ds.SeriesInstanceUID = new_series_uid
+#         ds.SeriesDescription = "Processed Series"
+#         ds.PixelData = new_images[i].astype(np.uint16).tobytes()
+#         ds.SOPInstanceUID = generate_uid()
+#         ds.file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+#         ds.is_little_endian = True
+#         ds.is_implicit_VR = False
+#         buffer = io.BytesIO()
+#         ds.save_as(buffer)
+#         buffer.seek(0)
+#         r = SESSION.post(
+#             f"{ORTHANC}/instances",
+#             data=buffer.read(),
+#             auth=AUTH,
+#             headers={"Content-Type": "application/dicom", "Expect": ""}
+#         )
+#         r.raise_for_status()
+#     return new_series_uid
+
+def update_orthanc():
+    """Updates"""
+    db = TinyDB(DB_PATH)
+    StudyQuery = Query()
+    existing_ids = [s["orthanc_study_id"] for s in db]
+
+    studies = fetch_studies()
+    for study_info in studies:
+        if study_info["ID"] in existing_ids:
+            continue
+        study = Study(study_info)
+        series_list = fetch_series_for_study(study.orthanc_id)
+        for series_info in series_list:
+            series = Series(series_info)
+            if series.series_label is None: 
+                # add mindmap
+                print('Mindmap...')
+                pass
+            if not series.sax_processed: 
+                # add segmentation
+                print('Segmentation...')
+                pass
+            if series.sax_processed and not series.roundel_processed: 
+                # add roundel
+                print('Roundelling...')
+                pass
+            study.series_list.append(series)
+        db.upsert(study.to_dict(), StudyQuery.study_uid == study.uid)
+    db.close()
