@@ -1,0 +1,18 @@
+[server]
+port = 8502
+headless = false
+enableCORS = false
+
+[theme]
+base = "light"
+backgroundColor="#f6f3ea"
+secondaryBackgroundColor="#ece9de"
+codeBackgroundColor=""#ece9de"
+primaryColor = "#6a4326"
+
+[theme.sidebar]
+backgroundColor="#e0ded0"
+secondaryBackgroundColor="#c8c6a9"
+
+[browser]
+gatherUsageStats = false

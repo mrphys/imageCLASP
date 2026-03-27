@@ -1,17 +1,18 @@
 from tinydb import TinyDB, Query
 import pandas as pd
 import numpy as np
+import os
+
 
 class Series:
-    def __init__(self, series_info, series_type = None, series_orientation = None, sax_processed = False, roundel_processed = False, associated_uid = None):
+    def __init__(self, series_info, series_type = None, series_orientation = None, dl_orthanc_id = None, roundel_orthanc_id = None):
         self.orthanc_id = series_info["ID"]
         self.uid = series_info["MainDicomTags"].get("SeriesInstanceUID")
         self.description = series_info["MainDicomTags"].get("SeriesDescription")
         self.series_type = series_type
         self.series_orientation = series_orientation
-        self.sax_processed = sax_processed
-        self.roundel_processed = roundel_processed
-        self.associated_uid = associated_uid
+        self.dl_orthanc_id = dl_orthanc_id
+        self.roundel_orthanc_id = roundel_orthanc_id
 
     def to_dict(self):
         record = {
@@ -20,9 +21,8 @@ class Series:
             "series_description": self.description,
             "series_type":self.series_type,
             "series_orientation":self.series_orientation,
-            "sax_processed":self.sax_processed,
-            "roundel_processed":self.roundel_processed,
-            "associated_orthanc_id":self.associated_uid
+            "dl_orthanc_id":self.dl_orthanc_id,
+            "roundel_orthanc_id":self.roundel_orthanc_id
         }
         return record
 
@@ -61,7 +61,7 @@ class Study:
             "study_date": self.study_date,
             "series": [s.to_dict() for s in self.series_list]
         }
-
+    
 def load_db_rows(DB_PATH):
     # Open TinyDB database
     db = TinyDB(DB_PATH)

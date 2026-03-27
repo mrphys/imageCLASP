@@ -1,20 +1,20 @@
 import plotly.express as px
 import plotly.graph_objects as go
-
+import numpy as np
+import streamlit as st
 my_palette = [
-    px.colors.qualitative.Plotly[9],
-    px.colors.qualitative.Plotly[5],
-    px.colors.qualitative.Plotly[2],
-    px.colors.qualitative.Plotly[3],
-    px.colors.qualitative.Plotly[4],
-    px.colors.qualitative.Plotly[5],
-    px.colors.qualitative.Plotly[6],
-    px.colors.qualitative.Plotly[7],
-    px.colors.qualitative.Plotly[8],
+    '#317c63',
+    "#5d2866",
+    "#2B356F",
+    "#222D6C",
 ]
 
 
-def hist(df, var, bin_start, bin_end, bin_size, colors):
+def hist(df, var, colors, title):
+    x=df[var].dropna()
+    bin_start = (np.min(x) // 10) * 10
+    bin_end = (np.max(x) // 10) * 10
+    bin_size = (bin_end-bin_start)/5
     fig = go.Figure(
         go.Histogram(
             x=df[var].dropna(),
@@ -28,7 +28,7 @@ def hist(df, var, bin_start, bin_end, bin_size, colors):
     
     fig.update_layout(
         title=dict(
-            text=var.replace("_", " ").title(),
+            text=title,
             x=0.5,
             xanchor="center",
             font=dict(size=18)
@@ -80,3 +80,23 @@ def pie(df, var, colors):
     return fig
 
 
+
+def st_header(title="CLASP dashboard"):
+    st.markdown(f"""
+    <style>
+    .block-container {{
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }}
+
+    .custom-title {{
+        text-align: center;
+        margin-bottom: 70px;
+        font-size: 40px;
+        font-family: Arial, sans-serif;
+        font-weight: bold;
+    }}
+    </style>
+
+    <h1 class="custom-title">{title}</h1>
+    """, unsafe_allow_html=True)

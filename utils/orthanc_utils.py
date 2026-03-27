@@ -60,25 +60,20 @@ def get_orthanc_series_data_from_uid(series_uid, ORTHANC, AUTH):
 
     return results[0]   
 
-def upload_processed_series(new_images, old_dcms):
+def send_series_to_orthanc(new_array, old_dcm, new_description):
     new_series_uid = generate_uid()
-    new_images = np.uint16(new_images) * 500
-    for i, ds in enumerate(old_dcms):
-        ds.SeriesInstanceUID = new_series_uid
-        ds.SeriesDescription = "Processed Series"
-        ds.PixelData = new_images[:,:,i].astype(np.uint16).tobytes()
-        ds.SOPInstanceUID = generate_uid()
-        ds.file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
-        ds.is_little_endian = True
-        ds.is_implicit_VR = False
+    for i in range(len(old_dcm)):
+        old_dcm[i].SeriesInstanceUID = new_series_uid
+        old_dcm[i].SeriesDescription = new_description 
+        old_dcm[i].PixelData = new_array[i].astype(np.uint16).tobytes()
+        old_dcm[i].SOPInstanceUID = generate_uid()
+        old_dcm[i].file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+        old_dcm[i].is_little_endian = True
+        old_dcm[i].is_implicit_VR = False
         buffer = io.BytesIO()
-        ds.save_as(buffer)
+        old_dcm[i].save_as(buffer)
         buffer.seek(0)
-        r = SESSION.post(
-            f"{ORTHANC}/instances",
-            data=buffer.read(),
-            auth=AUTH,
-            headers={"Content-Type": "application/dicom", "Expect": ""}
-        )
-        r.raise_for_status()
+        upload = SESSION.post(f"{ORTHANC}/instances",data=buffer.read(),auth=AUTH,headers={"Content-Type": "application/dicom", "Expect": ""})
+        upload.raise_for_status()
     return new_series_uid
+

@@ -8,10 +8,10 @@ from torch.utils.data import Dataset, DataLoader
 from scipy.ndimage import zoom
 import time
 
-from UNet import UNet
+from .UNet import UNet
 
 # ---- User-configurable paths ----
-MODEL_PATH = "./example_2d_model.pth"
+MODEL_PATH = "models/example_2d_model.pth"
 TARGET_SHAPE = (256, 256)
 NUM_CLASSES = 5
 BATCH_SIZE = 16

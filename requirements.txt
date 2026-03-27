@@ -19,3 +19,4 @@ tensorflow==2.20.0
 tinydb==4.8.2
 tqdm==4.67.3
 wheel==0.45.1
+torch==2.11.0
