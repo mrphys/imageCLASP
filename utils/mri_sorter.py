@@ -8,7 +8,9 @@ import re
 
 class MRI_Sorter:
     def __init__(self, study):
-        self.dicom_info = pd.concat([self.extract_series_df(s) for s in fetch_series_for_study(study.orthanc_id)])
+        series_list = study.series_dict.values()
+        series_list = [series for series in series_list if series.dl_orthanc_id is None and series.roundel_orthanc_id is None]
+        self.dicom_info = pd.concat([self.extract_series_df(s) for s in series_list])
 
         dicom_info_3D = self.dicom_info.loc[self.dicom_info['Dimension'] == 3]
         sort_dict_3D = self.sort_3D(dicom_info_3D)
@@ -18,10 +20,8 @@ class MRI_Sorter:
 
         sort_dict = {**sort_dict_2D, **sort_dict_3D}
         sort_df = pd.DataFrame(sort_dict).T
-        # sort_df.index.name = 'SeriesUID'
-        # sort_df = sort_df.reset_index()
-        # sort_df['patient'] = patient
         self.sort_df = sort_df
+
 
     def orientation_id(self, iop):
         """Get ImageOrientationPatient of dicom object.
@@ -43,8 +43,21 @@ class MRI_Sorter:
         elif plane[2] == 1:
             return 'Axial'
         else:
-            return 'NA'
-        
+            return np.nan
+    
+    def classfy_series(self, series_df, series_type):
+        ### this would be where the classification model goes
+
+        if series_type == 'Cine Stack':
+            description = series_df.iloc[0]["SeriesDescription"].lower()
+            # print(description)
+            if any(k in description for k in ["sax", "ml cine", "short"]):
+                return "SAX"
+            if "horizontal long axis" in description:
+                return "HLA"
+            if "vertical long axis" in description:
+                return "VLA"
+
 
     def update_sort_dict(self, sort_dict, dimension, all_series_list, series_type, flow_flag, cine_flag, stack_flag):
         for group_tag, all_series_df in enumerate(all_series_list):
@@ -54,7 +67,7 @@ class MRI_Sorter:
                     'Flow': flow_flag,
                     'Cine': cine_flag,
                     'Stack':stack_flag,
-                    'ImageOrientationPatient': self.orientation_id(series_df.iloc[0].ImageOrientationPatient),
+                    'Orientation': v if not pd.isna(v := self.orientation_id(series_df.iloc[0].ImageOrientationPatient)) else self.classfy_series(series_df, series_type),
                     'Type': series_type,
                     'Slices': series_df['SliceLocation'].nunique(),
                     'Frames': int(len(series_df) / series_df['SliceLocation'].nunique()),
@@ -62,19 +75,20 @@ class MRI_Sorter:
                 })
         return sort_dict
 
-    def extract_series_df(self, series_info):
-        instance_list = fetch_instances_for_series(series_info['ID'])
+    def extract_series_df(self, series):
+        instance_list = fetch_orthanc_instances_for_series(series.orthanc_series_id)
+
         if not instance_list:
             return pd.DataFrame()
 
         # read first DICOM for shared series-level fields and RR
-        ds0 = fetch_dicom(instance_list[0]['ID'])
+        ds0 = fetch_orthanc_dicom(instance_list[0]['ID'])
         if not ("PixelData" in ds0 and "ImageOrientationPatient" in ds0):
             return pd.DataFrame()
 
         image_shape = (ds0.Rows, ds0.Columns)
         series_fields = {
-            "SeriesUID": series_info['ID'],
+            "SeriesUID": series.orthanc_series_id,
             "SeriesDescription": getattr(ds0, "SeriesDescription", None),
             "PixelSpacing": getattr(ds0, "PixelSpacing")[0],
             "SliceThickness": getattr(ds0, "SpacingBetweenSlices", getattr(ds0, "SliceThickness", np.nan)),
@@ -158,7 +172,7 @@ class MRI_Sorter:
 
             idxs = (0, len(series_df)//2, len(series_df)-1)
             for i in idxs:
-                ds = fetch_dicom(series_df.iloc[i]['ID'])
+                ds = fetch_orthanc_dicom(series_df.iloc[i]['ID'])
                 manufacturer = (getattr(ds, 'Manufacturer', '') or '').lower()
 
                 venc = 0
@@ -207,7 +221,7 @@ class MRI_Sorter:
 
             idxs = (0, len(series_df)//2, len(series_df)-1)
             for i in idxs:
-                ds = fetch_dicom(series_df.iloc[i]['ID'])
+                ds = fetch_orthanc_dicom(series_df.iloc[i]['ID'])
                 tt = getattr(ds, 'TriggerTime', 0) or 0
                 triggertimes.append(float(tt))
             triggertimes = np.array(triggertimes)
@@ -217,7 +231,9 @@ class MRI_Sorter:
 
             cv = std / mean if mean != 0 else 0
 
-            if cv < cv_threshold:
+            if np.all(triggertimes == triggertimes[0]) or triggertimes[0] > 10000: ## for the GOSH and RFH cases where the trigger times are wrong
+                new_cine_stack_list.append(series_df)
+            elif cv < cv_threshold:
                 ss_mh_list.append(series_df)
             else:
                 new_cine_stack_list.append(series_df)

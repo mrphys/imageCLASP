@@ -1,12 +1,17 @@
 import streamlit as st
 from utils.pipeline import *
 
+#LV_LAX
+#RV_LAX
+#4CH
+#SAX
 
 st.set_page_config(page_icon="🖇", layout='wide')
 st_header('CLASP Dashboard')
 
 if "df" not in st.session_state:
-    update_orthanc()
+    sync_orthanc_and_db()
+    run_pipelines()
     st.session_state["df"] = load_db_rows(DB_PATH)
 
 if len(st.session_state["df"]) == 0:
@@ -16,12 +21,14 @@ else:
     with st.sidebar:
 
         if st.button("Check Orthanc"):
-            update_orthanc()
+            sync_orthanc_and_db()
+            run_pipelines()
+
             st.session_state["df"] = load_db_rows(DB_PATH)
             st.rerun()
 
         if st.button("Update CLASP"):
-            metrics_df = pd.read_csv('/Users/vivekmuthurangu/Downloads/CLASPv2/clasp_metrics.csv')
+            metrics_df = pd.read_csv(METRICS_PATH)
             st.session_state["df"] = load_db_rows(DB_PATH)
             st.rerun()
             

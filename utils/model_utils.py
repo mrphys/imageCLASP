@@ -22,7 +22,30 @@ elif torch.backends.mps.is_available():
     device = torch.device("mps")
 else:
     device = torch.device("cpu")
-    
+
+model = UNet(
+    in_channels=1,
+    out_channels=NUM_CLASSES,
+    filters=[16, 32, 64, 128, 256],
+    kernel_size=3,
+    conv_blocks_per_level=2,
+    rank=2,
+    activation="leaky_relu",
+    norm_type="BatchNorm",
+    dropout_rate=None,
+    final_activation="softmax",
+    pool_size=2,
+    upsample_size=2,
+)
+
+
+state_dict = torch.load(MODEL_PATH, map_location="cpu")
+model.load_state_dict(state_dict)
+
+model.to(device)
+model.eval()
+
+
 
  # Preprocessing helpers copied to match the training preprocessing logic
 
@@ -134,43 +157,29 @@ class InferenceSliceDataset(Dataset):
         image_tensor = torch.from_numpy(image_slice[..., np.newaxis]).permute(-1, 0, 1)
         return image_tensor.to(torch.float32), idx
 
-def run_inference_on_scan(images, pixel_spacing):
+def run_inference_on_scan(old_dcms):
+    ims = [ds.pixel_array for ds in old_dcms]
+    image_size = ims[0].shape
+    ds0 = old_dcms[0]
+    pixel_spacing = ds0.PixelSpacing
+
+    images = np.transpose(np.array(ims), (1,2,0))
+
     preprocessed_image_3d = preprocess_scan_like_training(images, pixel_spacing, target_shape=TARGET_SHAPE)
 
     test_dataset = InferenceSliceDataset(preprocessed_image_3d)
+    num_workers = min(4, os.cpu_count())
     test_loader = DataLoader(
         test_dataset,
         batch_size=BATCH_SIZE,
         shuffle=False,
-        num_workers=0,
-        pin_memory=True,
+        num_workers=num_workers,
+        pin_memory = (device.type == "cuda")
     )
 
-    device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
-
-    model = UNet(
-        in_channels=1,
-        out_channels=NUM_CLASSES,
-        filters=[16, 32, 64, 128, 256],
-        kernel_size=3,
-        conv_blocks_per_level=2,
-        rank=2,
-        activation="leaky_relu",
-        norm_type="BatchNorm",
-        dropout_rate=None,
-        final_activation="softmax",
-        pool_size=2,
-        upsample_size=2,
-    )
-
-    state_dict = torch.load(MODEL_PATH, map_location="cpu")
-    model.load_state_dict(state_dict)
-    model.to(device)
-    model.eval()
-
-
-    start = time.time()
     num_slices = preprocessed_image_3d.shape[2]
+    start = time.time()
+
     pred_mask_3d = np.zeros((num_slices, TARGET_SHAPE[0], TARGET_SHAPE[1]), dtype=np.uint8)
 
     with torch.no_grad():
@@ -184,11 +193,17 @@ def run_inference_on_scan(images, pixel_spacing):
 
 
     # Convert to (H, W, Z) to match image convention in preprocessing
-    pred_mask_h_w_z = np.transpose(pred_mask_3d, (1, 2, 0))
+    mask = np.transpose(pred_mask_3d, (1, 2, 0))
     end = time.time()
 
+    mask = zoom(mask, (1/pixel_spacing[0], 1/pixel_spacing[1], 1), order=0)
+    mask = crop_pad_hw(mask, image_size[0], image_size[1])
+    mask = np.uint16(mask) * 500
+    mask = np.transpose(np.array(mask), (2,0,1))
+
+
     print(f"Time: {end - start:.4f} seconds")
-    return pred_mask_h_w_z
+    return mask
 
 
 

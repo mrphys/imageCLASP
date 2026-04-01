@@ -6,7 +6,6 @@ from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 from tinydb import TinyDB, Query
 import pandas as pd
 
-DB_PATH = "./image_clasp_db.json"
 ORTHANC = "http://localhost:8042"
 AUTH = ("orthanc","orthanc")
 
@@ -14,35 +13,35 @@ SESSION = requests.Session()
 SESSION.auth = AUTH
 SESSION.trust_env = False
 
-def fetch_studies():
+def fetch_orthanc_studies():
     payload = {"Level": "Study", "Expand": True, "Query": {}}
     r = SESSION.post(f"{ORTHANC}/tools/find", json=payload, auth=AUTH)
     r.raise_for_status()
     return r.json()
 
-def fetch_series_for_study(study_id):
-    r = SESSION.get(f"{ORTHANC}/studies/{study_id}/series", auth=AUTH)
+def fetch_orthanc_series_for_study(orthanc_study_id):
+    r = SESSION.get(f"{ORTHANC}/studies/{orthanc_study_id}/series", auth=AUTH)
     r.raise_for_status()
     return r.json()
 
-def fetch_instances_for_series(series_id):
+def fetch_orthanc_instances_for_series(series_id):
     r = SESSION.get(f"{ORTHANC}/series/{series_id}/instances", auth=AUTH)
     r.raise_for_status()
     return r.json()
 
-def fetch_dicom(instance_id):
+def fetch_orthanc_dicom(instance_id):
     r = SESSION.get(f"{ORTHANC}/instances/{instance_id}/file", auth=AUTH)
     r.raise_for_status()
     return pydicom.dcmread(io.BytesIO(r.content))
 
-def fetch_dicoms_for_series(series_id):
+def fetch_orthanc_dicoms_for_series(series_id):
     dicoms = [
-        fetch_dicom(d['ID'])
-        for d in fetch_instances_for_series(series_id)
+        fetch_orthanc_dicom(d['ID'])
+        for d in fetch_orthanc_instances_for_series(series_id)
     ]
     return dicoms
 
-def get_orthanc_series_data_from_uid(series_uid, ORTHANC, AUTH):
+def get_orthanc_series_data_from_uid(series_uid):
     payload = {
         "Level": "Series",
         "Expand": True,
