@@ -1,0 +1,13 @@
+patient_id,diagnosis_group,diagnosis_type,diagnosis_date
+
+23456781,primary,AVSD,2026-04-06
+34567812,primary,Tetralogy of Fallot,2026-04-06
+56781234,primary,Ebstein anomaly,2013-02-14
+78123456,primary,Pulmonary stenosis,2013-04-17
+45678123,primary,Aortic stenosis,1994-04-22
+91234567,primary,HLHS,2016-04-13
+654321098,primary,Tetralogy of Fallot,2021-01-26
+12345678,primary,Bicuspid aortic valve,1973-09-19
+4568924,primary,TGA,2016-06-29
+67812345,primary,HLHS,2021-04-15
+6528642,primary,Tetralogy of Fallot,2012-04-18

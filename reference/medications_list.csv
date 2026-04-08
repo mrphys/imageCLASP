@@ -1,0 +1,45 @@
+medication_name,medication_group
+Aspirin,Antiplatelet
+Clopidogrel,Antiplatelet
+Ticagrelor,Antiplatelet
+Prasugrel,Antiplatelet
+Warfarin,Anticoagulant
+Apixaban,Anticoagulant
+Rivaroxaban,Anticoagulant
+Dabigatran,Anticoagulant
+Edoxaban,Anticoagulant
+Bisoprolol,Beta-blocker
+Metoprolol,Beta-blocker
+Carvedilol,Beta-blocker
+Atenolol,Beta-blocker
+Nebivolol,Beta-blocker
+Ramipril,ACE inhibitor
+Enalapril,ACE inhibitor
+Lisinopril,ACE inhibitor
+Losartan,ARB
+Valsartan,ARB
+Candesartan,ARB
+Sacubitril/valsartan,ARNI
+Furosemide,Diuretic
+Bumetanide,Diuretic
+Torsemide,Diuretic
+Spironolactone,MRA
+Eplerenone,MRA
+Amlodipine,Calcium channel blocker
+Nifedipine,Calcium channel blocker
+Diltiazem,Calcium channel blocker
+Verapamil,Calcium channel blocker
+Glyceryl trinitrate,Nitrate
+Isosorbide mononitrate,Nitrate
+Atorvastatin,Statin
+Rosuvastatin,Statin
+Simvastatin,Statin
+Ezetimibe,Lipid-lowering
+Amiodarone,Antiarrhythmic
+Flecainide,Antiarrhythmic
+Sotalol,Antiarrhythmic
+Digoxin,Rate control
+Dapagliflozin,SGLT2 inhibitor
+Empagliflozin,SGLT2 inhibitor
+Ivabradine,Heart failure therapy
+Other,Other

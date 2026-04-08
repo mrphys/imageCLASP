@@ -20,3 +20,5 @@ tinydb==4.8.2
 tqdm==4.67.3
 wheel==0.45.1
 torch==2.11.0
+albumentations==2.0.8
+duckdb==1.5.1

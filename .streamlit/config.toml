@@ -6,9 +6,9 @@ enableCORS = false
 [theme]
 base = "light"
 backgroundColor="#f6f3ea"
-secondaryBackgroundColor="#ece9de"
+secondaryBackgroundColor="#dfdbd2"
 codeBackgroundColor=""#ece9de"
-primaryColor = "#6a4326"
+primaryColor = "#A94442"
 
 [theme.sidebar]
 backgroundColor="#e0ded0"

@@ -1,0 +1,20 @@
+diagnosis_type,group
+VSD,primary
+ASD,primary
+AVSD,primary
+Tetralogy of Fallot,primary
+Ebstein anomaly,primary
+Pulmonary stenosis,primary
+Pulmonary atresia,primary
+TGA,primary
+Aortic stenosis,primary
+Bicuspid aortic valve,primary
+Coarctation,primary
+HLHS,primary
+Other,primary
+Hypertension,secondary
+Chronic AF,secondary
+CKD,secondary
+Obesity,secondary
+Asthma,secondary
+Other,secondary

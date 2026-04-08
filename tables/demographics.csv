@@ -1,0 +1,12 @@
+patient_id,first_name,last_name,dob,sex
+23456781,Jack,Doe,1941-01-01,F
+34567812,Kevin,Fakename,1980-01-01,M
+56781234,Lisa,Forcepat,2010-01-01,F
+78123456,Barry,Klingon,2009-01-01,M
+45678123,Jane,Notreal,1992-01-01,F
+91234567,Sarah,Romulan,1997-01-01,F
+654321098,Luke,Skywalker,2000-08-01,
+12345678,John,Smith,1960-01-01,F
+4568924,Han,Solo,1999-01-01,
+67812345,Jane,Starship,2020-01-01,F
+6528642,Lucy,Startrek,1989-01-01,F

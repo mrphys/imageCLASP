@@ -1,0 +1,10 @@
+event_type,event_group
+Death,major
+Emergency Hospitalisation,major
+Cardiac arrest,major
+Transplant,major
+Emergency surgery,major
+Non-sustained arrhythmia,minor
+Elective hospitalisation,minor
+Symptom progression,minor
+Medication change,minor

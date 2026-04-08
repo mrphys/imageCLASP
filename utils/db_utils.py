@@ -34,6 +34,7 @@ class Series:
         self.__dict__.update(kwargs)
 
         self.series_type = getattr(self, "series_type", None)
+        self.series_group = getattr(self, "series_group", None)
         self.series_orientation = getattr(self, "series_orientation", None)
         self.dl_orthanc_id = getattr(self, "dl_orthanc_id", None)
         self.roundel_orthanc_id = getattr(self, "roundel_orthanc_id", None)
@@ -48,6 +49,7 @@ class Series:
             "series_uid": self.series_uid,
             "series_description": self.series_description,
             "series_type": self.series_type,
+            "series_group": self.series_group,
             "series_orientation": self.series_orientation,
             "dl_orthanc_id": self.dl_orthanc_id,
             "roundel_orthanc_id": self.roundel_orthanc_id,
