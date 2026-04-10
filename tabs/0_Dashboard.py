@@ -14,10 +14,10 @@ load_theme()
 st_header('Clasp Dashboard')
 
 
-if "initialised" not in st.session_state:
+if "initialised_dashboard" not in st.session_state:
     sync_orthanc_and_db()
     # run_pipelines()
-    st.session_state['initialised'] = True
+    st.session_state['initialised_dashboard'] = True
 
 # ---------- Hard-coded Orthanc settings ----------
 def metric_box(label, value, color="#dfdbd2"):

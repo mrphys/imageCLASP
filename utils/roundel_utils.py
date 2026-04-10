@@ -824,13 +824,13 @@ def initialize_app(study):
         st.session_state['edit_made'] = False
         st.session_state['cached'] = cached
         st.session_state["saved"] = False
-        st.session_state.initialized_all = True
+        st.session_state.initialized_roundel = True
 
 
 
 def edv_esv_view():
     """Full EDV/ESV Finder view layout."""
-    if not st.session_state['initialized_all']:
+    if not st.session_state['initialized_roundel']:
         st.error("Select and confirm EDV/ESV first.")
         st.stop()
 

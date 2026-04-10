@@ -30,7 +30,7 @@ db = TinyDB(DB_PATH)
 studies = fetch_db_studies()
 study = studies[0]
 
-if 'initialized_all' not in st.session_state:
+if 'initialized_roundel' not in st.session_state:
     initialize_app(study)
 
 # with col2:
