@@ -34,12 +34,57 @@ def fetch_orthanc_dicom(instance_id):
     r.raise_for_status()
     return pydicom.dcmread(io.BytesIO(r.content))
 
+def fetch_orthanc_instances_for_series_list(series_id_list):
+    instances = [
+        item
+        for series_id in series_id_list
+        for item in fetch_orthanc_instances_for_series(series_id)
+    ]
+    return instances
+
 def fetch_orthanc_dicoms_for_series(series_id):
     dicoms = [
         fetch_orthanc_dicom(d['ID'])
         for d in fetch_orthanc_instances_for_series(series_id)
     ]
     return dicoms
+
+def fetch_orthanc_dicoms_for_series_list(series_id_list):
+    dicoms = [
+        item
+        for series_id in series_id_list
+        for item in fetch_orthanc_dicoms_for_series(series_id)
+    ]
+    return dicoms
+
+def fetch_pixel_arrays_for_series_list(series_id_list):
+    pixel_arrays = [
+        item.pixel_array
+        for series_id in series_id_list
+        for item in fetch_orthanc_dicoms_for_series(series_id)
+    ]
+    return pixel_arrays
+
+
+def upload_orthanc_file(file_path):
+    try:
+        with file_path.open("rb") as f:
+            r = SESSION.post(
+                f"{ORTHANC}/instances",
+                data=f,
+                headers={"Content-Type": "application/dicom"},
+                timeout=30,
+            )
+
+        try:
+            r.raise_for_status()
+            data = r.json()
+            return data.get("ParentSeries")
+        finally:
+            r.close()
+
+    except Exception:
+        return None
 
 def get_orthanc_series_data_from_uid(series_uid):
     payload = {
@@ -74,5 +119,7 @@ def send_series_to_orthanc(new_array, old_dcm, new_description):
         buffer.seek(0)
         upload = SESSION.post(f"{ORTHANC}/instances",data=buffer.read(),auth=AUTH,headers={"Content-Type": "application/dicom", "Expect": ""})
         upload.raise_for_status()
-    return new_series_uid
+
+    new_orthanc_id = get_orthanc_series_data_from_uid(new_series_uid)['ID']
+    return new_orthanc_id
 

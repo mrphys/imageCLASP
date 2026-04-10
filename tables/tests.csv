@@ -1,8 +1,0 @@
-test_id,patient_id,test_group,test_type,test_date
-
-
-2d1fa704,23456781,cpex,CPEX,2022-04-13
-2d1fa704,23456781,cpex,CPEX,2022-04-13
-54cc4cc5,23456781,cpex,CPEX,2018-03-15
-96728be3,78123456,cpex,CPEX,2021-04-08
-aaab512b,78123456,cpex,CPEX,2012-04-13

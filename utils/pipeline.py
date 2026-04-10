@@ -3,45 +3,82 @@ from utils.db_utils import *
 from utils.plot_utils import *
 from utils.mri_sorter import MRI_Sorter
 from utils.sax_dl_utils import *
+from utils.roundel_utils import *
 from scipy.ndimage import zoom
 import copy
 from stqdm import stqdm
 
 DB_PATH = "image_clasp_db.json"
-ORTHANC = "http://localhost:8042"
-METRICS_PATH = 'clasp_metrics.csv'
-AUTH = ("orthanc","orthanc")
+DEMOGRAPHICS_PATH = "tables/demographics.csv"
+EXAMS_PATH = "tables/exams.csv"
 
-SESSION = requests.Session()
-SESSION.auth = AUTH
-SESSION.trust_env = False
+def load_or_create_csv(path, columns):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
 
-columns = [
-    'orthanc_study_id', "lv_edv", "lv_esv", "lv_ef", "lv_mass",
+    if os.path.exists(path):
+        df = pd.read_csv(path)
+    else:
+        df = pd.DataFrame(columns=columns)
+
+    df.to_csv(path, index=False)
+    return df
+
+
+exam_columns = [
+    "orthanc_study_id", "patient_id", "study_date",
+    "lv_edv", "lv_esv", "lv_ef", "lv_mass",
     "rv_edv", "rv_esv", "rv_ef", "rv_mass"
 ]
 
-if os.path.exists(METRICS_PATH):
-    metrics_df = pd.read_csv(METRICS_PATH)
-else:
-    metrics_df = pd.DataFrame(columns=columns)
-metrics_df.to_csv(METRICS_PATH)
+# demographics_columns = [
+    # "patient_id", "first_name", "last_name", "dob", "sex"
+# ]
+
+metrics_df = load_or_create_csv(EXAMS_PATH, exam_columns)
+# demographics_df = load_or_create_csv(DEMOGRAPHICS_PATH, demographics_columns)
+
 
 def sync_orthanc_and_db():
     db = TinyDB(DB_PATH)
     StudyQuery = Query()
     existing_ids = [s["orthanc_study_id"] for s in db]
-
+    demo_record = {}
     orthanc_studies = fetch_orthanc_studies()
     for study_info in orthanc_studies:
         if study_info["ID"] in existing_ids:
             continue
         study = Study(study_info)
+        
         series_list = fetch_orthanc_series_for_study(study.orthanc_study_id)
         for series_info in series_list:
             series = Series(series_info)
             study.series_dict[series.orthanc_series_id] = series
         db.upsert(study.to_dict(), StudyQuery.study_uid == study.orthanc_study_id)
+
+        patient_name = study.patient_name.split('^')
+        last_name, first_name = patient_name
+        demo_record = {
+            'patient_id':study.patient_id,
+            'first_name':first_name, 
+            'last_name':last_name,
+            'sex':study.patient_sex,
+            'dob': pd.to_datetime(study.patient_dob, format="%Y%m%d").strftime("%Y-%m-%d"),
+            'data_entered':False
+        }
+        if demo_record:
+            if os.path.exists(DEMOGRAPHICS_PATH):
+                demo_df = pd.read_csv(DEMOGRAPHICS_PATH)
+            else:
+                demo_df = pd.DataFrame()  # or define columns if needed
+
+            demo_df = pd.concat([demo_df, pd.DataFrame([demo_record])], ignore_index=True)
+            demo_df.to_csv(DEMOGRAPHICS_PATH, index=False)
+
+        # studies = fetch_db_studies()
+        # if len(studies)>0:
+        #     for study in stqdm(studies, desc=f"Studies"):
+        #         mri_sorting_pipeline(study)
+        #         update_study(db, study)
     db.close()
 
 def update_study(db, study):
@@ -85,42 +122,71 @@ def sax_segmentation_pipeline(study):
 
     series_group = sax_df['series_group'].value_counts().index[0]
     sax_df = sax_df[sax_df['series_group'] == series_group]
-    series_orthanc_ids = set(sax_df['orthanc_series_id'])
+    sax_orthanc_ids = set(sax_df['orthanc_series_id'])
 
+    progress_bar = st.progress(0, f"## **Segmentation SAX:**")
+    total = len(fetch_orthanc_instances_for_series_list(sax_orthanc_ids))
+    completed = 0
     for sid, series in study.series_dict.items():
-        if sid in series_orthanc_ids:
+        if sid in sax_orthanc_ids:
             old_dcms = fetch_orthanc_dicoms_for_series(sid)
             mask = run_inference_on_scan(old_dcms)
 
-            new_uid = send_series_to_orthanc(
+            new_orthanc_id = send_series_to_orthanc(
                 mask,
                 old_dcms,
                 new_description="SAX DL Segmented"
             )
 
-            new_series_info = get_orthanc_series_data_from_uid(new_uid)
-            series.dl_orthanc_id = new_series_info["ID"]
+            series.dl_orthanc_id = new_orthanc_id
+            completed += len(old_dcms)
+
+        progress_bar.progress(completed / total, text = f"## **Segmentation SAX:** {completed}/{total} ({completed/total:.1%})")
 
 
-def roundel_pipeline(studies):
-    pass
+def stupid_roundel_pipeline(study):
+    df = pd.DataFrame([series.__dict__ for series in study.series_dict.values()])
+    sax_dl_df = df[(df['dl_orthanc_id'].notna()) & (df['roundel_orthanc_id'].isna())]
+
+    if sax_dl_df.empty:
+        return
+
+    for series_id, dl_series_id in zip(sax_dl_df["orthanc_series_id"], sax_dl_df["dl_orthanc_id"]):
+        series = study.series_dict[series_id]
+        image_dicoms = fetch_orthanc_dicoms_for_series(series_id)
+        mask_dicoms = fetch_orthanc_dicoms_for_series(dl_series_id)
+
+        masked_images = [image.pixel_array * (mask.pixel_array > 0) for image, mask in zip(image_dicoms, mask_dicoms) ]
+        new_orthanc_id = send_series_to_orthanc(masked_images, image_dicoms, new_description='Roundel Processed')
+        series.roundel_orthanc_id = new_orthanc_id
+
+    metrics = get_volumes(fetch_orthanc_dicoms_for_series_list(df["dl_orthanc_id"].dropna().unique()))
+    metrics['orthanc_study_id'] = study.orthanc_study_id
+    metrics['patient_id'] = study.patient_id
+    metrics['study_date'] = study.study_date
+
+    metrics_df = pd.read_csv(EXAMS_PATH)
+    metrics_df = pd.concat([metrics_df, pd.DataFrame([metrics])]).set_index('orthanc_study_id')
+    metrics_df.to_csv(EXAMS_PATH)
+
 
 
 def run_pipelines():
     db = TinyDB(DB_PATH)
 
     pipelines = {
-        "MRI Sorting": mri_sorting_pipeline,
-        "SAX Segmentation": sax_segmentation_pipeline,
-        # "Roundel": roundel_pipeline,
+        "MRI Sorting 🧹": mri_sorting_pipeline,
+        "SAX Segmentation 🫀": sax_segmentation_pipeline,
+        # "Stupid Roundel ⭕": stupid_roundel_pipeline
     }
 
     studies = fetch_db_studies()
 
     for pipeline_idx, (pipeline_name, pipeline) in enumerate(pipelines.items()):
-        for study in stqdm(
-            studies,
-            desc=f"Pipeline {pipeline_idx}/{len(pipelines)}: {pipeline_name}. Studies",
-        ):
+        for study in studies:
+        # stqdm(
+        #     studies,
+        #     desc=f"Pipeline {pipeline_idx+1}/{len(pipelines)}: {pipeline_name}. Studies",
+        # ):
             pipeline(study)
             update_study(db, study)

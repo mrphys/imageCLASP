@@ -2,6 +2,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 import streamlit as st
+import pandas as pd
 my_palette = [
     '#317c63',
     "#5d2866",
@@ -41,20 +42,9 @@ def hist(df, var, colors, title):
 
 
 def pie(df, var, colors):
+    print(df)
     counts = df[var].fillna("Unknown").value_counts().reset_index()
     counts.columns = [var, "count"]
-
-    if var == "patient_sex":
-        counts[var] = counts[var].replace({
-            "M": "Male",
-            "F": "Female"
-        })
-
-    if var == "DL_processed" or var == "roundel_processed":
-        counts[var] = counts[var].replace({
-            True: "Yes",
-            False: "No"
-        })
         
     fig = px.pie(counts, names=var, values="count")
     
@@ -74,12 +64,36 @@ def pie(df, var, colors):
         ),
         showlegend=False,
         margin=dict(t=40),
-        height=300
     )
     
     return fig
 
-
+def pie_from_counts(pos, total, label):
+    df = pd.DataFrame({
+        "label": [label, f"Not {label}"],
+        "count": [pos, total - pos]
+    })
+    
+    fig = px.pie(df, names="label", values="count")
+    
+    fig.update_traces(
+        textposition="inside",
+        textinfo="percent+label",
+        marker_colors=my_palette
+    )
+    
+    fig.update_layout(
+        title=dict(
+            text=label.title(),
+            x=0.5,
+            xanchor="center",
+            font=dict(size=18)
+        ),
+        showlegend=False,
+        margin=dict(t=40),
+        height=300
+    )
+    return fig
 
 def st_header(title="CLASP dashboard"):
     st.markdown(f"""
