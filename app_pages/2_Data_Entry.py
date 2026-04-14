@@ -1,11 +1,15 @@
 from utils.data_entry_utils import *
 from utils.pipeline import *
 from utils.theme_utils import *
-
+from utils.reset_utils import *
 load_theme(secondary="#155a8a",
     secondary_hover="#1F4264",
     secondary_active="#12324D"
     )
+
+if not os.path.exists(st.session_state['clasp.DEMOGRAPHICS_PATH']):
+    st.warning("There are no patients in the database!")
+    st.stop()
 
 
 # ---------- UI ----------
@@ -269,12 +273,20 @@ with tab6:
 
 # ---------- Global Save ----------
 st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-save_record = st.button("Save Record", key="data_entry.save_record_btn", type = 'primary')
+c1, _, c2, c3, _ = st.columns([0.4,0.1,0.2,0.2,1])
+with c1:
+    saved = st.button("Save Record", key="data_entry.save_record_btn", type = 'primary', use_container_width=True)
 
-if save_record:
-    if not st.session_state['data_entry.patient_id']:
-        st.error("Patient ID is missing.")
-    else:
-        save_data_entry()
-    clear_on_patient_change()
-    st.rerun()
+with c2:
+    if saved:
+        if st.button("No",  type = 'secondary', use_container_width=True):
+            st.rerun() 
+with c3:
+    if saved:
+        if st.button("Yes", type = 'secondary', use_container_width=True):
+            if not st.session_state['data_entry.patient_id']:
+                st.error("Patient ID is missing.")
+            else:
+                save_data_entry()
+            clear_on_patient_change()
+            st.rerun()

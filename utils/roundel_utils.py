@@ -18,8 +18,8 @@ from scipy.ndimage import (
 from skimage.measure import find_contours
 import cv2
 import json
-import json
 from datetime import datetime
+import copy
 
 root_path = Path(__file__).resolve().parent
 data_path = str(root_path / "roundel/data")
@@ -1313,59 +1313,60 @@ def final_result_view():
 
 
     if save_button:
+
+        with st.spinner('Saving...'):
+            final_mask_2d_flat = flatten_4d_array(final_mask_2d * st.session_state['clasp.MASK_SCALER'])
+
+            new_sax_df = st.session_state['roundel.sax_df'].copy()
+            new_sax_df['PixelArray'] = final_mask_2d_flat 
+
+            study = fetch_db_study(st.session_state['roundel.current_study_id'])
+            for series_orthanc_id, series_df in new_sax_df.groupby('OrthancSeriesID'):
+                old_dcms = [fetch_orthanc_dicom(id) for id in series_df.OrthancInstanceID]
+                new_masks = [mask for mask in series_df.PixelArray]
+                new_orthanc_id = send_series_to_orthanc(new_masks, old_dcms, new_description='Roundel')
+                series = fetch_db_series(study, series_orthanc_id)
+                series.roundel_orthanc_id = new_orthanc_id
+                study.series_dict[series_orthanc_id] = series
+        
+            db = TinyDB(st.session_state['clasp.DB_PATH'])
+            update_study(db, study)
+
+
+            # save_mask(final_mask_2d, f'{nifti_mask_path}/{st.session_state['roundel.patient_name']}.nii.gz')
+            # save_mask_as_dicom_series(final_mask_2d, f'{dicom_mask_path}/{st.session_state['roundel.patient_name']}')
+
+            combined_df = pd.DataFrame({
+                "orthanc_study_id": [orthanc_study_id],
+                "lv_edv": [lv_edv],
+                "lv_esv": [lv_esv],
+                "lv_sv": [lv_sv],
+                "lv_ef": [lv_ef],
+                "rv_mass": [rv_mass],
+                "rv_edv": [rv_edv],
+                "rv_esv": [rv_esv],
+                "rv_sv": [rv_sv],
+                "rv_ef": [rv_ef],
+                "rv_mass": [rv_mass],
+            })
+
+            EXAMS_PATH = st.session_state["clasp.EXAMS_PATH"]
+
+            if os.path.exists(EXAMS_PATH):
+                exams_df = pd.read_csv(EXAMS_PATH)
+                exams_df = pd.concat([exams_df, combined_df], ignore_index=True)
+                exams_df = exams_df.drop_duplicates(subset="orthanc_study_id", keep="last")
+            else:
+                exams_df = combined_df
+
+            exams_df.to_csv(EXAMS_PATH, index=False)
+            st.session_state["roundel.saved"] = True
+        
         if st.session_state.get("roundel.saved", False):
             st.success('Masks and Metrics Overwritten! ✅')
         else:
             st.success('Masks and Metrics Saved! ✅')
 
-
-        final_mask_2d_flat = flatten_4d_array(final_mask_2d * st.session_state['clasp.MASK_SCALER'])
-
-        new_sax_df = st.session_state['roundel.sax_df'].copy()
-        new_sax_df['PixelArray'] = final_mask_2d_flat 
-        
-        for series_orthanc_id, series_df in new_sax_df.groupby('OrthancSeriesID'):
-            old_dcms = [fetch_orthanc_dicom(id) for id in series_df.OrthancInstanceID]
-            new_masks = [mask for mask in series_df.PixelArray]
-            new_orthanc_id = send_series_to_orthanc(new_masks, old_dcms, new_description='Roundel')
-            series = fetch_db_series(st.session_state['roundel.study'], series_orthanc_id)
-            series.roundel_orthanc_id = new_orthanc_id
-    
-        db = TinyDB(st.session_state['clasp.DB_PATH'])
-        update_study(db, st.session_state['roundel.study'])
-
-
-
-
-
-        # save_mask(final_mask_2d, f'{nifti_mask_path}/{st.session_state['roundel.patient_name']}.nii.gz')
-        # save_mask_as_dicom_series(final_mask_2d, f'{dicom_mask_path}/{st.session_state['roundel.patient_name']}')
-
-        combined_df = pd.DataFrame({
-            "orthanc_study_id": [orthanc_study_id],
-            "lv_edv": [lv_edv],
-            "lv_esv": [lv_esv],
-            "lv_sv": [lv_sv],
-            "lv_ef": [lv_ef],
-            "rv_mass": [rv_mass],
-            "rv_edv": [rv_edv],
-            "rv_esv": [rv_esv],
-            "rv_sv": [rv_sv],
-            "rv_ef": [rv_ef],
-            "rv_mass": [rv_mass],
-        })
-
-        EXAMS_PATH = st.session_state["clasp.EXAMS_PATH"]
-
-        if os.path.exists(EXAMS_PATH):
-            exams_df = pd.read_csv(EXAMS_PATH)
-            exams_df = pd.concat([exams_df, combined_df], ignore_index=True)
-            exams_df = exams_df.drop_duplicates(subset="orthanc_study_id", keep="last")
-        else:
-            exams_df = combined_df
-
-        exams_df.to_csv(EXAMS_PATH, index=False)
-        st.session_state["roundel.saved"] = True
-    
+            
     elif st.session_state.get("roundel.saved", False):
         st.info('Masks and Metrics Previously Saved! ✅')

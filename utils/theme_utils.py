@@ -125,14 +125,7 @@ def load_theme(
     }}
 
     button[kind="secondary"] {{
-        height: auto !important;
-        padding: 0 !important;
-        background: none !important;
-        border: none !important;
-        box-shadow: none !important;
-        font-size: var(--button-font) !important;
-        font-weight: 650 !important;
-        line-height: 1 !important;
+        border-radius: 20px !important;
     }}
 
     button[kind="secondary"],

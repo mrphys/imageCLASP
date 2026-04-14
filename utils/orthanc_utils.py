@@ -79,7 +79,13 @@ def upload_orthanc_file(file_path):
         try:
             r.raise_for_status()
             data = r.json()
-            return data.get("ParentSeries")
+            series_id = data.get("ParentSeries")
+
+            series_resp = requests.get(f"{ORTHANC}/series/{series_id}")
+            series_data = series_resp.json()
+
+            study_id = series_data.get("ParentStudy")
+            return series_id, study_id
         finally:
             r.close()
 

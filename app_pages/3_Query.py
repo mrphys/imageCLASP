@@ -2,6 +2,14 @@ import streamlit as st
 import duckdb
 from utils.pipeline import *
 from utils.theme_utils import *
+from utils.reset_utils import *
+
+reset_app('data_entry')
+
+if not os.path.exists(st.session_state['clasp.DEMOGRAPHICS_PATH']):
+    st.warning("There are no patients in the database!")
+    st.stop()
+
 
 st.set_page_config(layout="wide")
 

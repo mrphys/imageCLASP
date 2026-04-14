@@ -1,16 +1,18 @@
 import streamlit as st
 import requests
 from utils.pipeline import *
-
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import subprocess
 import sys
-from utils.theme_utils import *
 import glob
+from utils.theme_utils import *
+from utils.reset_utils import *
+
 
 st.set_page_config(layout="wide")
 load_theme()
+reset_app('data_entry')
 st_header('Clasp Dashboard')
 
 
@@ -76,6 +78,7 @@ def upload_root_folder(root_folder: str):
     failed = 0
     total = 0
     series_list = []
+    study_list = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         futures = set()
@@ -90,9 +93,10 @@ def upload_root_folder(root_folder: str):
 
         for future in as_completed(futures):
             try:
-                series_id = future.result()
+                series_id, study_id = future.result()
                 if series_id is not None:
                     series_list.append(series_id)
+                    study_list.append(study_id)
                     uploaded += 1
                 else:
                     failed += 1
@@ -106,7 +110,8 @@ def upload_root_folder(root_folder: str):
             )
 
     num_series = len(set(series_list))
-    return total, failed, num_series
+    num_studies = len(set(study_list))
+    return total, failed, num_series, num_studies
 
 
 if "dashboard.selected_folder" not in st.session_state:
@@ -161,12 +166,13 @@ with pn2:
             st.session_state['dashboard.selected_folder'] = folder
 
             try:
-                total, failed, num_series = upload_root_folder(folder)
+                total, failed, num_series, num_studies = upload_root_folder(folder)
 
                 st.session_state['dashboard.upload_summary'] = {
+                    "Number of Studies":num_studies,
+                    "Number of Series":num_series,
                     "Total Files": total,
-                    "Failed Files": failed,
-                    "Number of Series":num_series
+                    "Failed Files": failed
                 }
 
             except Exception as e:

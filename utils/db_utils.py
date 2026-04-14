@@ -16,7 +16,10 @@ def fetch_db_studies():
 
 def fetch_db_study(study_id):
     db = TinyDB(DB_PATH)
-    return [study for study in db.all() if study['orthanc_study_id'] == study_id][0]
+    study = [study for study in db.all() if study['orthanc_study_id'] == study_id][0] 
+    study = Study.from_dict(study)
+    study.series_dict = {sid:Series.from_dict(series) for sid, series in study.series_dict.items()}
+    return study
 
 def fetch_db_series(study, series_orthanc_id):
     return [series for sid, series in study.series_dict.items() if sid == series_orthanc_id][0]

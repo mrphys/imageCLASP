@@ -214,9 +214,9 @@ def multi_group_form(
     ):
     
     state_key = f'data_entry.current_{label.lower()}'
-    group_key = f'data_entry.{label.lower()}_group'
-    type_field = f'data_entry.{label.lower()}_type'
-    date_field = f'data_entry.{label.lower()}_date'
+    group_field = f'{label.lower()}_group'
+    type_field = f'{label.lower()}_type'
+    date_field = f'{label.lower()}_date'
     cols = st.columns(len(groups))
 
     for col, (group_name, options) in zip(cols, groups.items()):
@@ -225,7 +225,7 @@ def multi_group_form(
                 entry_type = st.selectbox(
                     f"{group_name.capitalize()} {label}",
                     options,
-                    key=f"{type_field}_{group_name}",
+                    key=f"data_entry.{type_field}_{group_name}",
                 )
 
                 entry_date = st.date_input(
@@ -233,7 +233,7 @@ def multi_group_form(
                     value=date.today(),
                     min_value=MIN_DATE,
                     max_value=date.today(),
-                    key=f"{date_field}_{group_name}",
+                    key=f"data_entry.{date_field}_{group_name}",
                     format="DD-MM-YYYY",
                 )
 
@@ -242,7 +242,7 @@ def multi_group_form(
                         state_key,
                         {
                             "patient_id": st.session_state['data_entry.patient_id'],
-                            group_key: group_name,
+                            group_field: group_name,
                             type_field: entry_type,
                             date_field: str(entry_date),
                         },

@@ -50,7 +50,7 @@ class MRI_Sorter:
     
     def classify_series(self, series_df, series_type, dimension):
         description = series_df.iloc[0]["SeriesDescription"].lower()
-        if any(k in description for k in ["sax", "ml cine", "short"]):
+        if any(k in description for k in ["sax", "ml cine", "short",'sa_ipat']):
             return "SAX"
         elif "4ch" in description:
             return "4CH"
@@ -73,37 +73,8 @@ class MRI_Sorter:
             label = label_dict[np.argmax(probs).item()]
 
             print(label, series_df['SeriesDescription'].values[0])
-
             return label
                 
-            # # take first entry per slice
-            # unique_slices_df = (
-            #     series_df
-            #     .sort_values("SliceLocation")
-            #     .groupby("SliceLocation", as_index=False)
-            #     .first()
-            # )
-
-            # all_probs = []
-
-            # with torch.no_grad():
-            #     for _, row in unique_slices_df.iterrows():
-            #         dicom_id = row['ID']
-            #         image = fetch_orthanc_dicom(dicom_id).pixel_array
-
-            #         output = model(preprocess(image))
-            #         probs = torch.softmax(output, dim=1).squeeze()
-            #         all_probs.append(probs.cpu().numpy())
-
-            # mean_probs = np.mean(all_probs, axis=0)
-
-            # label = label_dict[np.argmax(mean_probs).item()]
-            # print(label, series_df['SeriesDescription'].values[0])
-
-            # return label
-
-
-
     def update_sort_dict(self, sort_dict, dimension, all_series_list, series_type, flow_flag, cine_flag, stack_flag):
         for group_tag, all_series_df in enumerate(all_series_list):
             if series_type == 'Cine Stack':
@@ -442,13 +413,13 @@ class MRI_Sorter:
         stack_df_list = self.get_venc(stack_df_list)
 
         flow_4d = [df for df in stack_df_list if (df['venc'] > 0).any()]
-        single_phase_list = [df for df in stack_df_list if df['SliceLocation'].nunique() == len(df) and not (df['venc'] != 0).any()]
-        multi_phase_list = [df for df in stack_df_list if df['SliceLocation'].nunique() != len(df) and not (df['venc'] != 0).any()]
+        single_phase_list = [df for df in stack_df_list if df['ImagePositionPatient'].nunique() == len(df) and not (df['venc'] != 0).any()]
+        multi_phase_list = [df for df in stack_df_list if df['ImagePositionPatient'].nunique() != len(df) and not (df['venc'] != 0).any()]
 
         single_mra = [df for df in single_phase_list if df['rr'].max() == 0]
         single_whole_heart = [df for df in single_phase_list if df['rr'].max() > 0]
         multi_mra = [df for df in multi_phase_list if df['rr'].max() == 0]
-        cine_4d = [df for df in multi_phase_list if (df['rr'].max() > 0) & (df['InstanceNumber'].nunique() > 1)]
+        cine_4d = [df for df in multi_phase_list if (df['rr'].max() > 0) & (df['InstanceNumber'].nunique() == 0)]
 
         # Update the sort_dict_3D 
         sort_dict_3D = self.update_sort_dict(sort_dict_3D, 3, single_mra, 'Single MRA', flow_flag=0, cine_flag=0, stack_flag = 'NA')

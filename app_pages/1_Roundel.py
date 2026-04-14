@@ -4,9 +4,12 @@
 from utils.roundel_utils import *
 from utils.pipeline import *
 from utils.theme_utils import *
+from utils.reset_utils import *
 
 st.set_page_config(page_title="Roundel", layout='wide')
 load_theme()
+reset_app('data_entry')
+
 
 # -----------------------------
 # Data paths and series info
@@ -16,6 +19,7 @@ st_header('Roundel')
 db = TinyDB(DB_PATH)
 studies = fetch_db_studies()
 study_dict = {}
+study_description = {}
 
 for study in studies:
     df = pd.DataFrame([series.__dict__ for series in study.series_dict.values()])
@@ -27,7 +31,8 @@ for study in studies:
         description = sax_dl_df['series_description'].values[0]
         
         study_date = datetime.strptime(study.study_date, "%Y%m%d").strftime("%d/%m/%Y")
-        study_dict[f'{first_name} {last_name} | {study_date} | {description}'] = study
+        study_dict[study.orthanc_study_id] = study
+        study_description[f'{first_name} {last_name} | {study_date} | {description}'] = study.orthanc_study_id
 
 num_remaining_studies = len(study_dict)
 
@@ -48,6 +53,7 @@ with col1:
         f"Select Study ({num_remaining_studies} Studies Left)",
         options=list(study_dict.keys()),
         key="roundel.current_study_id",
+        format_func=lambda x: next(k for k, v in study_description.items() if v == x),
         on_change=restart_app
     )
     study = study_dict[orthanc_study_id]
