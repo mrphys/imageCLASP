@@ -2,45 +2,29 @@ import numpy as np
 import pandas as pd
 from utils.pipeline import *
 import os
-import glob
-import math
-import hashlib
-import shutil
 from pathlib import Path
-import io
-
 import nibabel as nib
 import numpy as np
 import imageio.v2 as imageio
 from PIL import Image, ImageSequence, ImageDraw, ImageFont
-from cv2 import resize, INTER_NEAREST
-import matplotlib.pyplot as plt
-from matplotlib import animation
-from matplotlib.colors import ListedColormap
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
-from skimage.measure import label as cc_label, regionprops
 from scipy.ndimage import (
     binary_fill_holes,
     binary_dilation,
     binary_erosion,
-    binary_closing,
     gaussian_filter
 ) 
-from skimage.morphology import disk,convex_hull_image
-import pandas as pd
 from skimage.measure import find_contours
 import cv2
 import json
-import pydicom
-import zipfile
 import json
-from stqdm import stqdm
+from datetime import datetime
 
 root_path = Path(__file__).resolve().parent
-data_path = str(root_path / "data")
-results_path = str(root_path / "results")
-models_path = str(root_path / "models")
+data_path = str(root_path / "roundel/data")
+results_path = str(root_path / "roundel/results")
+models_path = str(root_path / "roundel/models")
 
 blank_gif_path = f'{results_path}/temp/blank'
 full_edited_gif_path = f'{results_path}/temp/edited'
@@ -52,7 +36,7 @@ edited_curve_path = f'{results_path}/temp/edited_metrics.png'
 dicom_mask_path = f'{results_path}/masks/dicoms/'
 nifti_mask_path = f'{results_path}/masks/nifti/'
 
-cache_dir = f'{root_path}/cache/'
+cache_dir = str(root_path / "roundel/cache")
 final_dir = f'{results_path}/results.zip'
 
 os.makedirs(f'{data_path}', exist_ok=True)
@@ -78,7 +62,6 @@ rv_idx = labels['RV']
 lv_myo_idx = labels['LV_myo']
 rv_myo_idx = labels['RV_myo']
 
-st.session_state['N'] = len(labels.keys())
 
 BACKGROUND_COLOR = (10, 10, 10, 0) # THIS HAS TO BE NON-ZERO
 RV_MYO_COLOR = (0, 200, 10, 50)    # Green
@@ -115,13 +98,37 @@ BRUSH_LABELS = dict(
     )
 )
 
-def get_4d_array(dicoms):
-    df = pd.DataFrame(
-        [{"SliceLocation": d.SliceLocation, "InstanceNumber": d.InstanceNumber, "PixelArray": d.pixel_array} for d in dicoms]
-    ).sort_values(["SliceLocation", "InstanceNumber"])
 
+def restart_app():
+    prev = st.session_state["roundel.prev_study_id"]
+    curr = st.session_state["roundel.current_study_id"]
+
+    if prev != curr:
+        for key in list(st.session_state.keys()):
+            if key.startswith("roundel.") and key not in {
+                "roundel.prev_study_id",
+                "roundel.current_study_id",
+            }:
+                st.session_state.pop(key)
+
+    st.session_state["roundel.prev_study_id"] = curr
+
+
+def get_4d_array(instances):
+    rows = [
+        {
+            "OrthancSeriesID":inst.get('ParentSeries'),
+            "OrthancInstanceID": inst["ID"],
+            "SliceLocation": (ds := fetch_orthanc_dicom(inst["ID"])).SliceLocation,
+            "InstanceNumber": ds.InstanceNumber,
+            "PixelArray": ds.pixel_array,
+        }
+        for inst in instances
+    ]
+    
+    sax_df = pd.DataFrame(rows).sort_values(['SliceLocation','InstanceNumber']).reset_index(drop = True)
     array_4d = []
-    for _, slice_df in df.groupby("SliceLocation"):
+    for _, slice_df in sax_df.groupby("SliceLocation"):
         time_array = []
         for _, time_df in slice_df.groupby("InstanceNumber"):
             pixel_array = time_df["PixelArray"].iloc[0]
@@ -131,39 +138,16 @@ def get_4d_array(dicoms):
         array_4d.append(slice_array)
 
     array_4d = np.stack(array_4d, axis=-2)
-    return array_4d
+    return sax_df, array_4d
 
-def get_volumes(dicoms):   
+def flatten_4d_array(array_4d):
+    array_flat = [
+        array_4d[:, :, sl, t]
+        for sl in range(array_4d.shape[2])
+        for t in range(array_4d.shape[3])
+    ]
+    return array_flat
 
-    d0 = dicoms[0]
-    pixel_spacing = float(d0.PixelSpacing[0])
-    thickness = float(getattr(d0, "SpacingBetweenSlices", getattr(d0, "SliceThickness", np.nan)))
-    voxel_size = (pixel_spacing ** 2 * thickness) / 1000
-
-
-    array_4d, voxel_size = get_4d_array(dicoms) 
-
-    labels = {500: "lv", 1000: "rv", 1500: "lv_myo", 2000: "rv_myo"}
-    curves = {
-        name: np.sum(array_4d == val, axis=(0, 1, 2)) * voxel_size
-        for val, name in labels.items()
-    }
-    lv, rv = curves["lv"], curves["rv"]
-    lv_edv, lv_esv = lv.max(), lv.min()
-    rv_edv, rv_esv = rv.max(), rv.min()
-
-    metrics = {
-        "lv_edv": lv_edv,
-        "lv_esv": lv_esv,
-        "lv_ef": (lv_edv - lv_esv) / lv_edv,
-        "lv_mass": np.mean(curves["lv_myo"]) * 1.05,
-        "rv_edv": rv_edv,
-        "rv_esv": rv_esv,
-        "rv_ef": (rv_edv - rv_esv) / rv_edv,
-        "rv_mass": np.mean(curves["rv_myo"]) * 1.05,
-    }
-
-    return metrics
 
 
 def load_font(size):
@@ -214,7 +198,7 @@ def normalize(image):
 def merge_masks(lv_mask, rv_mask):
     combined_mask = lv_mask + rv_mask
     combined_mask = np.argmax(combined_mask, -1)
-    combined_mask = np.eye(st.session_state['N'], dtype=np.uint8)[combined_mask]
+    combined_mask = np.eye(st.session_state['roundel.N'], dtype=np.uint8)[combined_mask]
     return combined_mask
 
 
@@ -298,7 +282,7 @@ def cv_zoom_mask(
         labels[epi] = myo_idx
         labels[endo] = endo_idx
 
-    return np.eye(st.session_state['N'], dtype=np.uint8)[labels]
+    return np.eye(st.session_state['roundel.N'], dtype=np.uint8)[labels]
 
 def format_delta(value, raw_value, suffix="", round_digits=None):
     if round_digits is not None:
@@ -364,7 +348,7 @@ def find_crop_box(mask, crop_factor):
 
 
 def make_video(image, mask, save_file, ventricle = 'all', mask_frames = 'all',scale=1):
-    N = st.session_state['N']
+    N = st.session_state['roundel.N']
     if ventricle == 'rv':
         channels = [rv_idx, rv_myo_idx]
     elif ventricle == 'lv':
@@ -458,16 +442,21 @@ def make_video(image, mask, save_file, ventricle = 'all', mask_frames = 'all',sc
 
 
 def calculate_sax_metrics(mask, blood_pool_idx, myo_idx, dia_idx, sys_idx):
-    voxel_size = st.session_state.pixelspacing ** 2 * st.session_state.thickness / 1000
+    voxel_size = st.session_state['roundel.pixelspacing'] ** 2 * st.session_state['roundel.thickness'] / 1000
     volume = np.sum(mask[..., blood_pool_idx], axis=(0,1,2)) * voxel_size
     masses = np.sum(mask[..., myo_idx], axis=(0,1,2)) * voxel_size * 1.05
     mass = masses[dia_idx]
     edv = volume[dia_idx]
     esv = volume[sys_idx]
     sv = edv - esv
-    ef = (sv) * 100/edv
+    ef = (sv) * 100 / edv
+    
+    edv = round(edv, 2)
+    esv = round(esv, 2)
+    sv = round(sv, 2)
+    ef = round(ef, 1)
+    mass = round(mass, 2)
     return volume, masses, edv, esv, sv, ef, mass
-
 
 
 def thicken_close_fill_and_smooth(strokes, stroke_width):
@@ -506,10 +495,10 @@ def thicken_close_fill_and_smooth(strokes, stroke_width):
 
 
 def wrap(key, min_val, max_val):
-    if st.session_state[key] > max_val:
-        st.session_state[key] = min_val
-    elif st.session_state[key] < min_val:
-        st.session_state[key] = max_val
+    if st.session_state[f'roundel.{key}'] > max_val:
+        st.session_state[f'roundel.{key}'] = min_val
+    elif st.session_state[f'roundel.{key}'] < min_val:
+        st.session_state[f'roundel.{key}'] = max_val
 
 
 
@@ -538,8 +527,8 @@ def copy_frames_channels(mask_name, dia_idx, sys_idx, blood_idx, myo_idx):
     frames = [dia_idx, sys_idx]
     channels = [blood_idx, myo_idx]
 
-    mask = st.session_state[mask_name]
-    smooth_mask = st.session_state.preprocessed["smooth_mask"]
+    mask = st.session_state[f'roundel.{mask_name}']
+    smooth_mask = st.session_state['roundel.preprocessed']["smooth_mask"]
 
     # Loop over frames and channels to ensure proper assignment
     for f in frames:
@@ -548,7 +537,7 @@ def copy_frames_channels(mask_name, dia_idx, sys_idx, blood_idx, myo_idx):
 
 def confirm_selection(lv_dia_idx, lv_sys_idx,rv_dia_idx, rv_sys_idx):
     """Store confirmed EDV/ESV indices in session state."""
-    st.session_state['edv_esv_selected'].update({
+    st.session_state['roundel.edv_esv_selected'].update({
         "lv_dia_idx": lv_dia_idx,
         "lv_sys_idx": lv_sys_idx,
         "rv_dia_idx": rv_dia_idx,
@@ -556,7 +545,7 @@ def confirm_selection(lv_dia_idx, lv_sys_idx,rv_dia_idx, rv_sys_idx):
         "confirmed": True
     })
 
-    save_config(st.session_state['edv_esv_selected'], st.session_state['cache_config_path'])
+    save_config(st.session_state['roundel.edv_esv_selected'], st.session_state['roundel.cache_config_path'])
 
     # LV
     copy_frames_channels('edited_mask_lv', lv_dia_idx, lv_sys_idx, lv_idx, lv_myo_idx)
@@ -564,19 +553,21 @@ def confirm_selection(lv_dia_idx, lv_sys_idx,rv_dia_idx, rv_sys_idx):
     # RV
     copy_frames_channels('edited_mask_rv', rv_dia_idx, rv_sys_idx, rv_idx, rv_myo_idx)
 
-    save_cached_mask(merge_masks(st.session_state['edited_mask_lv'],st.session_state['edited_mask_rv']), save_path=st.session_state['cache_mask_path'])
+    save_cached_mask(merge_masks(st.session_state['roundel.edited_mask_lv'],
+                                 st.session_state['roundel.edited_mask_rv']),
+                                 save_path=st.session_state['roundel.cache_mask_path'])
 
     make_video(
-        st.session_state.preprocessed['smooth_image'],
-        st.session_state['edited_mask_lv'],
+        st.session_state['roundel.preprocessed']['smooth_image'],
+        st.session_state['roundel.edited_mask_lv'],
         mask_frames = [lv_dia_idx, lv_sys_idx],
         save_file=f'{edited_gif_path}_lv',
 
     )
 
     make_video(
-        st.session_state.preprocessed['smooth_image'],
-        st.session_state['edited_mask_rv'],
+        st.session_state['roundel.preprocessed']['smooth_image'],
+        st.session_state['roundel.edited_mask_rv'],
         mask_frames = [rv_dia_idx, rv_sys_idx],
         save_file=f'{edited_gif_path}_rv',
         ventricle = 'rv'
@@ -584,11 +575,11 @@ def confirm_selection(lv_dia_idx, lv_sys_idx,rv_dia_idx, rv_sys_idx):
 
     gif = Image.open(f'{edited_gif_path}_lv.gif')
     lv_frames = [frame.copy() for frame in ImageSequence.Iterator(gif)]
-    st.session_state['lv_frames'] = lv_frames
+    st.session_state['roundel.lv_frames'] = lv_frames
 
     gif = Image.open(f'{edited_gif_path}_rv.gif')
     rv_frames = [frame.copy() for frame in ImageSequence.Iterator(gif)]
-    st.session_state['rv_frames'] = rv_frames
+    st.session_state['roundel.rv_frames'] = rv_frames
 
 def resize_to_original(edited_mask, raw_mask, crop_box, dia_idx, sys_idx, ventricle):
     """
@@ -683,176 +674,226 @@ def smooth_zoom(mask, zoom=[4,4,1,1,1], sigma=5.0, to_discrete=True):
 # Initialization
 # --------------------------------------------------------------
 def initialize_app(study):
-    stages = 5
-    with stqdm(total=stages, desc="Loading App...") as pbar:
-        st.session_state.orthanc_study_id = study.orthanc_study_id
+    st.session_state['roundel.N'] = len(labels.keys())
 
-        df = pd.DataFrame([series.__dict__ for series in study.series_dict.values()])
-        sax_dl_df = df[(df['dl_orthanc_id'].notna()) & (df['roundel_orthanc_id'].isna())]
+    progress_bar = st.progress(0, text=f"## **Loading Roundel**")
 
-        image_dicoms = fetch_orthanc_dicoms_for_series_list(sax_dl_df["orthanc_series_id"].dropna().unique()) 
-        mask_dicoms = fetch_orthanc_dicoms_for_series_list(sax_dl_df["dl_orthanc_id"].dropna().unique())
+    def step(p, msg):
+        progress_bar.progress(p, text=f'## **{msg}**')
 
-        raw_image = get_4d_array(image_dicoms)
-        raw_mask = (get_4d_array(mask_dicoms)/500).astype('uint8')
-        # sax_df = pd.read_csv(f'{data_path}/saxdf___{orthanc_study_id}.csv')
-        d0 = image_dicoms[0]
-        pixelspacing = float(d0.PixelSpacing[0])
-        thickness = float(getattr(d0, "SpacingBetweenSlices", getattr(d0, "SliceThickness", np.nan)))
-        pbar.update(1)
+    st.session_state['roundel.orthanc_study_id'] = study.orthanc_study_id
 
-        raw_mask = np.eye(st.session_state['N'], dtype=np.uint8)[raw_mask]
-        raw_shape = raw_image.shape
+    df = pd.DataFrame([s.__dict__ for s in study.series_dict.values()])
+    sax_dl_df = df[(df["dl_orthanc_id"].notna()) & (df["roundel_orthanc_id"].isna())]
 
-        # -----------------------------
-        # Compute raw indices
-        # -----------------------------
-        lv_volume = np.sum(raw_mask[...,lv_idx], axis=(0,1,2))
-        rv_volume = np.sum(raw_mask[...,rv_idx], axis=(0,1,2))
 
-        if np.max(lv_volume) == 0:
-            raw_lv_dia_idx = 0
-            raw_lv_sys_idx = 15
+    image_instances = fetch_orthanc_instances_for_series_list(
+        sax_dl_df["orthanc_series_id"].dropna().unique()
+    )
+    mask_instances = fetch_orthanc_instances_for_series_list(
+        sax_dl_df["dl_orthanc_id"].dropna().unique()
+    )
 
-            raw_rv_dia_idx = 0
-            raw_rv_sys_idx = 15
+    step(1/5, "Loading Roundel")
 
-        else:
-            raw_lv_dia_idx = int(np.argmax(lv_volume))
-            raw_lv_sys_idx = np.where(lv_volume != 0)[0][np.argmin(lv_volume[lv_volume != 0])]
+    sax_df, raw_image = get_4d_array(image_instances)
+    _, raw_mask = get_4d_array(mask_instances)
+    raw_mask = (raw_mask / st.session_state['clasp.MASK_SCALER']).astype("uint8")
 
-            raw_rv_dia_idx = int(np.argmax(rv_volume))
-            raw_rv_sys_idx = np.where(rv_volume != 0)[0][np.argmin(rv_volume[rv_volume != 0])]
+    st.session_state['roundel.sax_df'] = sax_df
 
-        st.session_state.raw = {
-            "image": raw_image,
-            "mask": raw_mask,
-            "shape": raw_shape,
-            "raw_lv_dia_idx": raw_lv_dia_idx,
-            "raw_lv_sys_idx": raw_lv_sys_idx,
-            "raw_rv_dia_idx":raw_rv_dia_idx,
-            "raw_rv_sys_idx":raw_rv_sys_idx
+    d0 = fetch_orthanc_dicom(image_instances[0]['ID'])
+    st.session_state["roundel.pixelspacing"] = float(d0.PixelSpacing[0])
+    st.session_state["roundel.thickness"] = float(
+        getattr(d0, "SpacingBetweenSlices",
+        getattr(d0, "SliceThickness", np.nan))
+    )
+
+    raw_mask = np.eye(st.session_state["roundel.N"], dtype=np.uint8)[raw_mask]
+    raw_shape = raw_image.shape
+
+    lv_volume = np.sum(raw_mask[..., lv_idx], axis=(0, 1, 2))
+    rv_volume = np.sum(raw_mask[..., rv_idx], axis=(0, 1, 2))
+
+    if np.max(lv_volume) == 0:
+        raw_lv_dia_idx = 0
+        raw_lv_sys_idx = 15
+        raw_rv_dia_idx = 0
+        raw_rv_sys_idx = 15
+    else:
+        nz_lv = np.where(lv_volume != 0)[0]
+        nz_rv = np.where(rv_volume != 0)[0]
+
+        raw_lv_dia_idx = int(np.argmax(lv_volume))
+        raw_lv_sys_idx = int(nz_lv[np.argmin(lv_volume[nz_lv])])
+
+        raw_rv_dia_idx = int(np.argmax(rv_volume))
+        raw_rv_sys_idx = int(nz_rv[np.argmin(rv_volume[nz_rv])])
+
+    st.session_state['roundel.raw'] = {
+        "image": raw_image,
+        "mask": raw_mask,
+        "shape": raw_shape,
+        "raw_lv_dia_idx": raw_lv_dia_idx,
+        "raw_lv_sys_idx": raw_lv_sys_idx,
+        "raw_rv_dia_idx": raw_rv_dia_idx,
+        "raw_rv_sys_idx": raw_rv_sys_idx,
+    }
+
+    if "roundel.edv_esv_selected" not in st.session_state:
+        st.session_state['roundel.edv_esv_selected'] = {
+            "lv_dia_idx": None,
+            "lv_sys_idx": None,
+            "rv_dia_idx": None,
+            "rv_sys_idx": None,
+            "confirmed": False,
         }
 
-        # -----------------------------
-        # Initialize EDV/ESV selection
-        # -----------------------------
-        if "edv_esv_selected" not in st.session_state:
-            st.session_state['edv_esv_selected'] = {"lv_dia_idx": None, "lv_sys_idx": None,"rv_dia_idx": None, "rv_sys_idx": None, "confirmed": False}
+    mask_channels = [i for i in range(st.session_state['roundel.N']) if i != background_idx]
 
-        # -----------------------------
-        # Preprocess / crop if required
-        # -----------------------------
-        mask_channels = [i for i in range(st.session_state.N) if i != background_idx]
+    x_min, y_min, x_max, y_max = find_crop_box(
+        np.max(raw_mask[..., mask_channels], axis=(-1, -2, -3)),
+        crop_factor=1.5,
+    )
 
-        x_min, y_min, x_max, y_max = find_crop_box(np.max(raw_mask[...,mask_channels], axis=(-1,-2,-3)), crop_factor=1.5)
-        st.session_state['subpixel_resolution'] = 2
+    st.session_state["roundel.subpixel_resolution"] = 2
 
-        preprocessed_image = raw_image[y_min:y_max, x_min:x_max, :, :]
-        preprocessed_mask = raw_mask[y_min:y_max, x_min:x_max, :, :, :].astype('uint8')
-        H, W, D, T, N = preprocessed_mask.shape
+    preprocessed_image = raw_image[y_min:y_max, x_min:x_max, :, :]
+    preprocessed_mask = raw_mask[y_min:y_max, x_min:x_max, :, :, :].astype("uint8")
 
-        pbar.update(1)
+    H, W, D, T, N = preprocessed_mask.shape
 
-        has_masks = np.where(np.sum(preprocessed_mask[...,mask_channels], axis = (0,1,3,-1))>0)[0]
-        if len(has_masks) == 0:
-            has_masks = np.array([1,2,3,4,5,6])
+    step(2/5, "Loading Roundel")
 
-        mid_slice = len(has_masks)//2
-        
+    has_masks = np.where(
+        np.sum(preprocessed_mask[..., mask_channels], axis=(0, 1, 3, -1)) > 0
+    )[0]
 
-        zoom = [st.session_state['subpixel_resolution'],st.session_state['subpixel_resolution'],1,1]
-        smoothed_image = cv_zoom(preprocessed_image, zoom = zoom)
+    if len(has_masks) == 0:
+        has_masks = np.array([1, 2, 3, 4, 5, 6])
 
+    mid_slice = len(has_masks) // 2
 
-        st.session_state['cache_config_path'] = f"{cache_dir}/config___{st.session_state.orthanc_study_id}.json"
-        st.session_state['cache_mask_path'] = f"{cache_dir}/masks___{st.session_state.orthanc_study_id}.npy"
+    zoom = [
+        st.session_state["roundel.subpixel_resolution"],
+        st.session_state["roundel.subpixel_resolution"],
+        1,
+        1,
+    ]
 
-        pbar.update(1)
+    smoothed_image = cv_zoom(preprocessed_image, zoom=zoom)
 
-        if os.path.exists(st.session_state['cache_config_path']) and os.path.exists(st.session_state['cache_mask_path']):
-            smoothed_mask = load_cached_mask(st.session_state['cache_mask_path']).astype("uint8")
-            cached = True
-        else:
-            smoothed_mask = cv_zoom_mask(
-                preprocessed_mask,
-                zoom=zoom + [1],
-                interpolation=cv2.INTER_NEAREST,
-            )
-            cached = False
+    st.session_state["roundel.cache_config_path"] = (
+        f"{cache_dir}/config___{st.session_state['roundel.orthanc_study_id']}.json"
+    )
+    st.session_state["roundel.cache_mask_path"] = (
+        f"{cache_dir}/masks___{st.session_state['roundel.orthanc_study_id']}.npy"
+    )
 
-        make_video(smoothed_image[:,:,has_masks[mid_slice-3:mid_slice+3],:], smoothed_mask[:,:,has_masks[mid_slice-3:mid_slice+3],:, :] * 0, save_file=edv_esv_gif_path)
-        pbar.update(1)
-        make_video(smoothed_image, smoothed_mask*0, save_file=blank_gif_path)
-        pbar.update(1)
+    step(3/5, "Loading Roundel")
 
+    if (
+        os.path.exists(st.session_state["roundel.cache_config_path"])
+        and os.path.exists(st.session_state["roundel.cache_mask_path"])
+    ):
+        smoothed_mask = load_cached_mask(
+            st.session_state["roundel.cache_mask_path"]
+        ).astype("uint8")
+        cached = True
+    else:
+        smoothed_mask = cv_zoom_mask(
+            preprocessed_mask,
+            zoom=zoom + [1],
+            interpolation=cv2.INTER_NEAREST,
+        )
+        cached = False
 
-        gif = Image.open(f'{edv_esv_gif_path}.gif')
+    make_video(
+        smoothed_image[:, :, has_masks[mid_slice - 3 : mid_slice + 3], :],
+        smoothed_mask[:, :, has_masks[mid_slice - 3 : mid_slice + 3], :, :] * 0,
+        save_file=edv_esv_gif_path,
+    )
 
-        st.session_state.preprocessed = {
-            "image": preprocessed_image,
-            "mask": preprocessed_mask,
-            "smooth_image": smoothed_image,
-            "smooth_mask": smoothed_mask,
-            "H": H,
-            "W": W,
-            "D": D,
-            "T": T,
-            "N": N,
-            "edv_esv_frames": [frame.copy() for frame in ImageSequence.Iterator(gif)],
-            "crop_box": [x_min, y_min, x_max, y_max],
-        }
+    step(4/5, "Loading Roundel")
 
+    make_video(
+        smoothed_image,
+        smoothed_mask * 0,
+        save_file=blank_gif_path,
+    )
 
-        st.session_state[f'edited_mask_lv'] = np.zeros_like(st.session_state.preprocessed["smooth_mask"])
-        st.session_state[f'edited_mask_rv'] = np.zeros_like(st.session_state.preprocessed["smooth_mask"])
+    step(5/5, "Loading Roundel")
 
-        if cached:
-            config = load_config(st.session_state['cache_config_path'])
-            confirm_selection(lv_dia_idx=config['lv_dia_idx'], 
-                            rv_dia_idx=config['rv_dia_idx'], 
-                            lv_sys_idx=config['lv_sys_idx'], 
-                            rv_sys_idx=config['rv_sys_idx'])
+    gif = Image.open(f"{edv_esv_gif_path}.gif")
 
-        # -----------------------------
-        # Initialize edited mask
-        st.session_state['lv_frames'] = None
-        st.session_state['rv_frames'] = None
-        st.session_state["view_mode"] = 'Static'
-        st.session_state["brush_mode"] = "Paint ✏️"
-        st.session_state["stroke_width"] = "thin"
-        st.session_state['edit_made'] = False
-        st.session_state['cached'] = cached
-        st.session_state["saved"] = False
-        st.session_state.initialized_roundel = True
+    st.session_state['roundel.preprocessed'] = {
+        "image": preprocessed_image,
+        "mask": preprocessed_mask,
+        "smooth_image": smoothed_image,
+        "smooth_mask": smoothed_mask,
+        "H": H,
+        "W": W,
+        "D": D,
+        "T": T,
+        "N": N,
+        "edv_esv_frames": [f.copy() for f in ImageSequence.Iterator(gif)],
+        "crop_box": [x_min, y_min, x_max, y_max],
+    }
+
+    st.session_state['roundel.edited_mask_lv'] = np.zeros_like(
+        st.session_state['roundel.preprocessed']["smooth_mask"]
+    )
+    st.session_state['roundel.edited_mask_rv'] = np.zeros_like(
+        st.session_state['roundel.preprocessed']["smooth_mask"]
+    )
+
+    if cached:
+        config = load_config(st.session_state["roundel.cache_config_path"])
+        confirm_selection(
+            lv_dia_idx=config["lv_dia_idx"],
+            rv_dia_idx=config["rv_dia_idx"],
+            lv_sys_idx=config["lv_sys_idx"],
+            rv_sys_idx=config["rv_sys_idx"],
+        )
+
+    st.session_state['roundel.lv_frames'] = None
+    st.session_state['roundel.rv_frames'] = None
+    st.session_state['roundel.view_mode'] = "Static"
+    st.session_state['roundel.brush_mode'] = "Paint ✏️"
+    st.session_state['roundel.stroke_width'] = "thin"
+    st.session_state['roundel.edit_made'] = False
+    st.session_state['roundel.cached'] = cached
+    st.session_state['roundel.saved'] = False
+    st.session_state['roundel.initialized'] = True
+    progress_bar.empty()
 
 
 
 def edv_esv_view():
     """Full EDV/ESV Finder view layout."""
-    if not st.session_state['initialized_roundel']:
+    if not st.session_state['roundel.initialized']:
         st.error("Select and confirm EDV/ESV first.")
         st.stop()
 
-    if "edv_esv_selected" not in st.session_state:
-        st.session_state['edv_esv_selected'] = {"lv_dia_idx": None, "lv_sys_idx": None, "rv_dia_idx": None, "rv_sys_idx": None,"confirmed": False}
+    if "roundel.edv_esv_selected" not in st.session_state:
+        st.session_state['roundel.edv_esv_selected'] = {"lv_dia_idx": None, "lv_sys_idx": None, "rv_dia_idx": None, "rv_sys_idx": None,"confirmed": False}
     
-    H, W, D, T, N = [st.session_state.preprocessed[k] for k in ["H","W","D","T","N"]]
-    edv_esv_frames= st.session_state.preprocessed['edv_esv_frames']
+    H, W, D, T, N = [st.session_state['roundel.preprocessed'][k] for k in ["H","W","D","T","N"]]
+    edv_esv_frames= st.session_state['roundel.preprocessed']['edv_esv_frames']
 
 
-    if st.session_state.edv_esv_selected['confirmed']:
-        display_lv_dia_idx=st.session_state.edv_esv_selected['lv_dia_idx']
-        display_rv_dia_idx=st.session_state.edv_esv_selected['rv_dia_idx']
-        display_lv_sys_idx=st.session_state.edv_esv_selected['lv_sys_idx']
-        display_rv_sys_idx=st.session_state.edv_esv_selected['rv_sys_idx']
+    if st.session_state['roundel.edv_esv_selected']['confirmed']:
+        display_lv_dia_idx=st.session_state['roundel.edv_esv_selected']['lv_dia_idx']
+        display_rv_dia_idx=st.session_state['roundel.edv_esv_selected']['rv_dia_idx']
+        display_lv_sys_idx=st.session_state['roundel.edv_esv_selected']['lv_sys_idx']
+        display_rv_sys_idx=st.session_state['roundel.edv_esv_selected']['rv_sys_idx']
     else:
-        display_lv_dia_idx=st.session_state.raw['raw_lv_dia_idx']
-        display_rv_dia_idx=st.session_state.raw['raw_rv_dia_idx'] 
-        display_lv_sys_idx=st.session_state.raw['raw_lv_sys_idx'] 
-        display_rv_sys_idx=st.session_state.raw['raw_rv_sys_idx'] 
+        display_lv_dia_idx=st.session_state['roundel.raw']['raw_lv_dia_idx']
+        display_rv_dia_idx=st.session_state['roundel.raw']['raw_rv_dia_idx'] 
+        display_lv_sys_idx=st.session_state['roundel.raw']['raw_lv_sys_idx'] 
+        display_rv_sys_idx=st.session_state['roundel.raw']['raw_rv_sys_idx'] 
 
-    disabled_flag = st.session_state['edv_esv_selected']["confirmed"]
+    disabled_flag = st.session_state['roundel.edv_esv_selected']["confirmed"]
 
     col_lv, col_rv = st.columns(2)
 
@@ -890,23 +931,23 @@ def edv_esv_view():
 
 
 def slice_navigation(D):
-    if "slice_idx" not in st.session_state:
-        st.session_state.slice_idx = 0
-    if "previous_slice_idx" not in st.session_state:
-        st.session_state.previous_slice_idx = st.session_state.slice_idx
+    if "roundel.slice_idx" not in st.session_state:
+        st.session_state['roundel.slice_idx'] = 0
+    if "roundel.previous_slice_idx" not in st.session_state:
+        st.session_state['roundel.previous_slice_idx'] = st.session_state['roundel.slice_idx']
 
     # Store previous slice
-    previous_d = st.session_state.previous_slice_idx
+    previous_d = st.session_state['roundel.previous_slice_idx']
 
     # Slider (updates slice_idx immediately)
-    st.slider("Slice Index", 0, D - 1,key="slice_idx")
+    st.slider("Slice Index", 0, D - 1, key= "roundel.slice_idx")
 
     col_prev, col_next = st.columns(2)
     with col_prev:
         st.button(
             "Previous",
             on_click=lambda: st.session_state.update(
-                slice_idx=max(0, st.session_state.slice_idx - 1)
+                **{"roundel.slice_idx": max(0, st.session_state["roundel.slice_idx"] - 1)}
             ),
             use_container_width=True,
         )
@@ -914,19 +955,19 @@ def slice_navigation(D):
         st.button(
             "Next",
             on_click=lambda: st.session_state.update(
-                slice_idx=min(D - 1, st.session_state.slice_idx + 1)
+                **{"roundel.slice_idx": min(D-1, st.session_state["roundel.slice_idx"] + 1)}
             ),
             use_container_width=True,
         )
 
     # Determine if canvas needs reset
-    previous_objects = st.session_state.get('canvas', {}).get('previous_objects', [])
-    reset_canvas = previous_d != st.session_state.slice_idx and bool(previous_objects)
+    previous_objects = st.session_state.get('roundel.canvas', {}).get('previous_objects', [])
+    reset_canvas = previous_d != st.session_state['roundel.slice_idx'] and bool(previous_objects)
 
     # Update previous slice for next rerun
-    st.session_state.previous_slice_idx = st.session_state.slice_idx
+    st.session_state['roundel.previous_slice_idx'] = st.session_state['roundel.slice_idx']
 
-    return st.session_state.slice_idx, reset_canvas
+    return st.session_state['roundel.slice_idx'], reset_canvas
 
 
 
@@ -942,7 +983,7 @@ def get_overlay(image_slice, mask_state, H, W, N, OVERLAY_COLORS, ventricle):
     for i in channels:
         ch_mask = mask_state[:, :, i]
         if np.any(ch_mask):
-            mask_img = np.zeros((H*st.session_state['subpixel_resolution'], W*st.session_state['subpixel_resolution'], 4), dtype=np.uint8)
+            mask_img = np.zeros((H*st.session_state['roundel.subpixel_resolution'], W*st.session_state['roundel.subpixel_resolution'], 4), dtype=np.uint8)
             mask_img[ch_mask > 0] = OVERLAY_COLORS[i]
             overlay = Image.alpha_composite(overlay, Image.fromarray(mask_img))
     return overlay
@@ -953,16 +994,16 @@ def select_brush(N, ventricle):
     """Brush selection UI for channel, action, and stroke width."""
     action = st.radio("Brush Stroke Selection", 
                       options=["Paint ✏️", "Erase ✂️"],  
-                      index=["Paint ✏️", "Erase ✂️"].index(st.session_state.brush_mode),
+                      index=["Paint ✏️", "Erase ✂️"].index(st.session_state['roundel.brush_mode']),
                       horizontal=True)
-    st.session_state['brush_mode'] = action
+    st.session_state['roundel.brush_mode'] = action
     
     stroke_width_map = {"thin":6,"medium":20,"thick":40}
     stroke_width_sel = st.radio("Stroke Width", 
                                 options=list(stroke_width_map.keys()),  
-                                index= list(stroke_width_map.keys()).index(st.session_state["stroke_width"]), 
+                                index= list(stroke_width_map.keys()).index(st.session_state["roundel.stroke_width"]), 
                                 horizontal=True)
-    st.session_state['stroke_width'] = stroke_width_sel
+    st.session_state['roundel.stroke_width'] = stroke_width_sel
     if ventricle == 'lv':
         valid_channels = [lv_myo_idx, lv_idx]
     elif ventricle == 'rv':
@@ -987,14 +1028,14 @@ def select_brush(N, ventricle):
 
 def mask_editor_view():
     """Full Mask Editor layout."""
-    if not st.session_state['edv_esv_selected']["confirmed"]:
+    if not st.session_state['roundel.edv_esv_selected']["confirmed"]:
         st.error("Select and confirm EDV/ESV first.")
         st.stop()
 
     col1, col2, col3 = st.columns([1,1.5,1.5])
 
-    H, W, D, T, N = [st.session_state.preprocessed[k] for k in ["H","W","D","T","N"]]
-    image=st.session_state.preprocessed["smooth_image"]
+    H, W, D, T, N = [st.session_state['roundel.preprocessed'][k] for k in ["H","W","D","T","N"]]
+    image=st.session_state['roundel.preprocessed']["smooth_image"]
 
     with col1:
         ventricle_label = st.radio("Ventricle", options=["Left Ventricle","Right Ventricle"],  index = 0, horizontal=True)
@@ -1006,9 +1047,9 @@ def mask_editor_view():
         d, reset_canvas = slice_navigation(D)
 
 
-        edited_mask=st.session_state[f'edited_mask_{ventricle}']
-        dia_idx=st.session_state.edv_esv_selected[f"{ventricle}_dia_idx"]
-        sys_idx=st.session_state.edv_esv_selected[f"{ventricle}_sys_idx"]
+        edited_mask=st.session_state[f'roundel.edited_mask_{ventricle}']
+        dia_idx=st.session_state['roundel.edv_esv_selected'][f"{ventricle}_dia_idx"]
+        sys_idx=st.session_state['roundel.edv_esv_selected'][f"{ventricle}_sys_idx"]
 
 
     idx = dia_idx if idx_label=="End-Diastole" else sys_idx
@@ -1023,18 +1064,18 @@ def mask_editor_view():
             st.image(image_slice, width=DISPLAY_W)
         else:
             # Initialize canvas state
-            if 'canvas' not in st.session_state:
-                st.session_state['canvas'] = {
+            if 'roundel.canvas' not in st.session_state:
+                st.session_state['roundel.canvas'] = {
                     'canvas_key': f'editor_{d}',
                     'previous_d': d,
                     'previous_objects': []
                 }
                         
             if reset_canvas:
-                st.session_state['canvas']['canvas_key'] = f'editor_{d}'
-                st.session_state['canvas']['previous_objects'] = []
+                st.session_state['roundel.canvas']['canvas_key'] = f'editor_{d}'
+                st.session_state['roundel.canvas']['previous_objects'] = []
 
-            st.session_state['canvas']['previous_d'] = d
+            st.session_state['roundel.canvas']['previous_d'] = d
 
             canvas_result = st_canvas(
                 stroke_width=stroke_width,
@@ -1044,7 +1085,7 @@ def mask_editor_view():
                 height = H*DISPLAY_W/W,
                 width=DISPLAY_W,
                 drawing_mode='freedraw',
-                key=st.session_state['canvas']['canvas_key']+ ventricle
+                key=st.session_state['roundel.canvas']['canvas_key']+ ventricle
             )
 
 
@@ -1052,11 +1093,11 @@ def mask_editor_view():
             current_objects = []
             if canvas_result and canvas_result.json_data:
                 current_objects = canvas_result.json_data.get("objects", [])
-            st.session_state['canvas']['previous_objects'] = current_objects
+            st.session_state['roundel.canvas']['previous_objects'] = current_objects
 
             # Save / clear buttons (trigger rerun only here)
             col_save, col_clear = st.columns([1, 0.3])
-            edited_mask = st.session_state[f'edited_mask_{ventricle}']
+            edited_mask = st.session_state[f'roundel.edited_mask_{ventricle}']
             
             with col_save:
                 save_contour = st.button('Save Contour', type='primary', use_container_width=True)
@@ -1088,28 +1129,28 @@ def mask_editor_view():
                     for idx_color, ch in enumerate(overlay_channels):
                         resized_mask = np.array(
                             Image.fromarray(combined_mask[:, :, idx_color]).resize(
-                                (W*st.session_state['subpixel_resolution'], H*st.session_state['subpixel_resolution']),
+                                (W*st.session_state['roundel.subpixel_resolution'], H*st.session_state['roundel.subpixel_resolution']),
                                 resample=Image.NEAREST
                             )
                         )
                         edited_mask[:, :, d, idx, :][resized_mask > 0] = 0
                         edited_mask[:, :, d, idx, ch][resized_mask > 0] = 1
 
-                    st.session_state['edit_made'] = True
-                    combined_mask = merge_masks(st.session_state[f'edited_mask_lv'] , st.session_state[f'edited_mask_rv'])
-                    save_cached_mask(combined_mask, save_path=st.session_state['cache_mask_path'])
+                    st.session_state['roundel.edit_made'] = True
+                    combined_mask = merge_masks(st.session_state[f'roundel.edited_mask_lv'] , st.session_state[f'roundel.edited_mask_rv'])
+                    save_cached_mask(combined_mask, save_path=st.session_state['roundel.cache_mask_path'])
                     st.rerun()
 
             with col_clear:
                 if st.button('❌', use_container_width=True):
                     edited_mask[:, :, d, idx, :] = 0
-                    combined_mask = merge_masks(st.session_state[f'edited_mask_lv'] , st.session_state[f'edited_mask_rv'])
-                    save_cached_mask(combined_mask, save_path=st.session_state['cache_mask_path'])
+                    combined_mask = merge_masks(st.session_state[f'roundel.edited_mask_lv'] , st.session_state[f'roundel.edited_mask_rv'])
+                    save_cached_mask(combined_mask, save_path=st.session_state['roundel.cache_mask_path'])
 
-                    st.session_state['edit_made'] = True
+                    st.session_state['roundel.edit_made'] = True
                     st.rerun()
 
-            st.session_state[f'edited_mask_{ventricle}'] = edited_mask
+            st.session_state[f'roundel.edited_mask_{ventricle}'] = edited_mask
             
 
 
@@ -1122,21 +1163,21 @@ def mask_editor_view():
             horizontal=True,
         )
 
-        if st.session_state[f'{ventricle}_frames'] is None or st.session_state['edit_made']:
+        if st.session_state[f'roundel.{ventricle}_frames'] is None or st.session_state['roundel.edit_made']:
             make_video(
                 image,
-                st.session_state[f'edited_mask_{ventricle}'],
+                st.session_state[f'roundel.edited_mask_{ventricle}'],
                 save_file=f'{edited_gif_path}_{ventricle}',
                 mask_frames = [dia_idx, sys_idx],
                 ventricle = ventricle
             )
 
             gif = Image.open(f'{edited_gif_path}_{ventricle}.gif')
-            st.session_state[f'{ventricle}_frames'] = [frame.copy() for frame in ImageSequence.Iterator(gif)]
-            st.session_state['edit_made'] = False
+            st.session_state[f'roundel.{ventricle}_frames'] = [frame.copy() for frame in ImageSequence.Iterator(gif)]
+            st.session_state['roundel.edit_made'] = False
 
         if view_mode == "Static":
-            view_image = st.session_state[f'{ventricle}_frames'][0 if idx_label == "End-Diastole" else 1]
+            view_image = st.session_state[f'roundel.{ventricle}_frames'][0 if idx_label == "End-Diastole" else 1]
             width = int(DISPLAY_W * 1.5)
         elif view_mode == "Viewer":
             view_image = image_slice
@@ -1147,10 +1188,10 @@ def mask_editor_view():
 
 
 def final_result_view():
-    raw = st.session_state.raw
-    preprocessed = st.session_state.preprocessed
-    pixelspacing = st.session_state.pixelspacing
-    thickness = st.session_state.thickness
+    raw = st.session_state['roundel.raw']
+    preprocessed = st.session_state['roundel.preprocessed']
+    pixelspacing = st.session_state['roundel.pixelspacing']
+    thickness = st.session_state['roundel.thickness']
 
     raw_image = raw["image"]
     raw_mask = raw["mask"]
@@ -1160,7 +1201,7 @@ def final_result_view():
 
     crop_box = preprocessed['crop_box']
     
-    if not st.session_state.edv_esv_selected["confirmed"]:
+    if not st.session_state['roundel.edv_esv_selected']["confirmed"]:
         st.error("Select and confirm EDV/ESV first.")
         st.stop()
 
@@ -1169,17 +1210,17 @@ def final_result_view():
     raw_rv_dia_idx = raw["raw_rv_dia_idx"]
     raw_rv_sys_idx = raw["raw_rv_sys_idx"]
 
-    lv_dia_idx = st.session_state['edv_esv_selected']["lv_dia_idx"]
-    lv_sys_idx = st.session_state['edv_esv_selected']["lv_sys_idx"]
-    rv_dia_idx = st.session_state['edv_esv_selected']["rv_dia_idx"]
-    rv_sys_idx = st.session_state['edv_esv_selected']["rv_sys_idx"]
-    orthanc_study_id = st.session_state.orthanc_study_id
+    lv_dia_idx = st.session_state['roundel.edv_esv_selected']["lv_dia_idx"]
+    lv_sys_idx = st.session_state['roundel.edv_esv_selected']["lv_sys_idx"]
+    rv_dia_idx = st.session_state['roundel.edv_esv_selected']["rv_dia_idx"]
+    rv_sys_idx = st.session_state['roundel.edv_esv_selected']["rv_sys_idx"]
+    orthanc_study_id = st.session_state['roundel.orthanc_study_id']
 
     final_lv_gif_path = f"{results_path}/gifs/{orthanc_study_id}_lv.gif"
     final_rv_gif_path = f"{results_path}/gifs/{orthanc_study_id}_rv.gif"
 
-    lv_mask = cv_zoom(st.session_state['edited_mask_lv'], zoom = [1/st.session_state['subpixel_resolution'],1/st.session_state['subpixel_resolution'],1,1])
-    rv_mask = cv_zoom(st.session_state['edited_mask_rv'], zoom = [1/st.session_state['subpixel_resolution'],1/st.session_state['subpixel_resolution'],1,1])
+    lv_mask = cv_zoom(st.session_state['roundel.edited_mask_lv'], zoom = [1/st.session_state['roundel.subpixel_resolution'],1/st.session_state['roundel.subpixel_resolution'],1,1])
+    rv_mask = cv_zoom(st.session_state['roundel.edited_mask_rv'], zoom = [1/st.session_state['roundel.subpixel_resolution'],1/st.session_state['roundel.subpixel_resolution'],1,1])
 
     combined_mask = merge_masks(lv_mask, rv_mask)
 
@@ -1272,51 +1313,59 @@ def final_result_view():
 
 
     if save_button:
-        if st.session_state.get("saved", False):
+        if st.session_state.get("roundel.saved", False):
             st.success('Masks and Metrics Overwritten! ✅')
         else:
             st.success('Masks and Metrics Saved! ✅')
 
+
+        final_mask_2d_flat = flatten_4d_array(final_mask_2d * st.session_state['clasp.MASK_SCALER'])
+
+        new_sax_df = st.session_state['roundel.sax_df'].copy()
+        new_sax_df['PixelArray'] = final_mask_2d_flat 
         
-        save_mask(final_mask_2d, f'{nifti_mask_path}/{st.session_state.patient_name}.nii.gz')
-        # save_mask_as_dicom_series(final_mask_2d, f'{dicom_mask_path}/{st.session_state.patient_name}')
-
-        lv_df = pd.DataFrame({
-            "orthanc_study_id": [orthanc_study_id],
-            "chamber": ["LV"],
-            "edv_frame": [lv_dia_idx],
-            "esv_frame": [lv_sys_idx],
-            "edv": [lv_edv],
-            "esv": [lv_esv],
-            "stroke_volume": [lv_sv],
-            "ejection_fraction": [lv_ef],
-            "mass": [lv_mass],
-            "pixelspacing": [pixelspacing],
-            "thickness": [thickness],
-            "num_slices": [lv_mask.shape[2]],
-            "num_frames": [lv_mask.shape[3]],
-        })
-
-        rv_df = pd.DataFrame({
-            "orthanc_study_id": [orthanc_study_id],
-            "chamber": ["RV"],
-            "edv_frame": [rv_dia_idx],
-            "esv_frame": [rv_sys_idx],
-            "edv": [rv_edv],
-            "esv": [rv_esv],
-            "stroke_volume": [rv_sv],
-            "ejection_fraction": [rv_ef],
-            "mass": [rv_mass],
-            "pixelspacing": [pixelspacing],
-            "thickness": [thickness],
-            "num_slices": [rv_mask.shape[2]],
-            "num_frames": [rv_mask.shape[3]],
-        })
-
-        combined_df = pd.concat([lv_df, rv_df], ignore_index=True)
-        combined_df.to_csv(f'{results_path}/edited_sax_df/{st.session_state.patient_name}.csv', index=False)
-
-        st.session_state["saved"] = True
+        for series_orthanc_id, series_df in new_sax_df.groupby('OrthancSeriesID'):
+            old_dcms = [fetch_orthanc_dicom(id) for id in series_df.OrthancInstanceID]
+            new_masks = [mask for mask in series_df.PixelArray]
+            new_orthanc_id = send_series_to_orthanc(new_masks, old_dcms, new_description='Roundel')
+            series = fetch_db_series(st.session_state['roundel.study'], series_orthanc_id)
+            series.roundel_orthanc_id = new_orthanc_id
     
-    elif st.session_state.get("saved", False):
+        db = TinyDB(st.session_state['clasp.DB_PATH'])
+        update_study(db, st.session_state['roundel.study'])
+
+
+
+
+
+        # save_mask(final_mask_2d, f'{nifti_mask_path}/{st.session_state['roundel.patient_name']}.nii.gz')
+        # save_mask_as_dicom_series(final_mask_2d, f'{dicom_mask_path}/{st.session_state['roundel.patient_name']}')
+
+        combined_df = pd.DataFrame({
+            "orthanc_study_id": [orthanc_study_id],
+            "lv_edv": [lv_edv],
+            "lv_esv": [lv_esv],
+            "lv_sv": [lv_sv],
+            "lv_ef": [lv_ef],
+            "rv_mass": [rv_mass],
+            "rv_edv": [rv_edv],
+            "rv_esv": [rv_esv],
+            "rv_sv": [rv_sv],
+            "rv_ef": [rv_ef],
+            "rv_mass": [rv_mass],
+        })
+
+        EXAMS_PATH = st.session_state["clasp.EXAMS_PATH"]
+
+        if os.path.exists(EXAMS_PATH):
+            exams_df = pd.read_csv(EXAMS_PATH)
+            exams_df = pd.concat([exams_df, combined_df], ignore_index=True)
+            exams_df = exams_df.drop_duplicates(subset="orthanc_study_id", keep="last")
+        else:
+            exams_df = combined_df
+
+        exams_df.to_csv(EXAMS_PATH, index=False)
+        st.session_state["roundel.saved"] = True
+    
+    elif st.session_state.get("roundel.saved", False):
         st.info('Masks and Metrics Previously Saved! ✅')

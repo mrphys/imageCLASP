@@ -1,0 +1,90 @@
+# --------------------------------------------------------------
+# Configure Streamlit page
+# --------------------------------------------------------------
+from utils.roundel_utils import *
+from utils.pipeline import *
+from utils.theme_utils import *
+
+st.set_page_config(page_title="Roundel", layout='wide')
+load_theme()
+
+# -----------------------------
+# Data paths and series info
+# -----------------------------
+
+st_header('Roundel')
+db = TinyDB(DB_PATH)
+studies = fetch_db_studies()
+study_dict = {}
+
+for study in studies:
+    df = pd.DataFrame([series.__dict__ for series in study.series_dict.values()])
+    sax_dl_df = df[(df['dl_orthanc_id'].notna()) & (df['roundel_orthanc_id'].isna())]
+
+    if len(sax_dl_df) > 0:
+        patient_name = study.patient_name.split('^')
+        last_name, first_name = patient_name
+        description = sax_dl_df['series_description'].values[0]
+        
+        study_date = datetime.strptime(study.study_date, "%Y%m%d").strftime("%d/%m/%Y")
+        study_dict[f'{first_name} {last_name} | {study_date} | {description}'] = study
+
+num_remaining_studies = len(study_dict)
+
+if num_remaining_studies == 0:
+    st.success("🎉 All Roundel cases completed!")
+    st.stop()
+
+
+col1, col2 = st.columns([0.26, 0.7])
+if "roundel.prev_study_id" not in st.session_state:
+    st.session_state["roundel.prev_study_id"] = list(study_dict.keys())[0]
+
+if "roundel.current_study_id" not in st.session_state:
+    st.session_state["roundel.current_study_id"] = list(study_dict.keys())[0]
+
+with col1:
+    orthanc_study_id = st.selectbox(
+        f"Select Study ({num_remaining_studies} Studies Left)",
+        options=list(study_dict.keys()),
+        key="roundel.current_study_id",
+        on_change=restart_app
+    )
+    study = study_dict[orthanc_study_id]
+    st.session_state['roundel.study'] = study
+
+# --------------------------------------------------------------
+# App
+# --------------------------------------------------------------
+
+view = st.segmented_control(
+    "Tab",
+    options=["EDV/ESV Finder 🔍", "Mask Editor 📝", "Final Result ✅"],
+    default = "EDV/ESV Finder 🔍",
+    label_visibility='hidden'
+)
+st.divider()
+
+if 'roundel.initialized' not in st.session_state:
+    initialize_app(study)
+
+# --------------------------------------------------------------
+# EDV/ESV Finder 
+# --------------------------------------------------------------
+if view == "EDV/ESV Finder 🔍":
+    edv_esv_view()
+
+
+# --------------------------------------------------------------
+# Mask Editor 
+# --------------------------------------------------------------
+
+if view == "Mask Editor 📝":
+    mask_editor_view()
+
+
+# --------------------------------------------------------------
+# Final Result
+# --------------------------------------------------------------
+if view == "Final Result ✅":
+    final_result_view()

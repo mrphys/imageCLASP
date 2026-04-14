@@ -14,10 +14,10 @@ load_theme()
 st_header('Clasp Dashboard')
 
 
-if "initialised_dashboard" not in st.session_state:
+if "dashboard.initialised" not in st.session_state:
     sync_orthanc_and_db()
     # run_pipelines()
-    st.session_state['initialised_dashboard'] = True
+    st.session_state['dashboard.initialised'] = True
 
 # ---------- Hard-coded Orthanc settings ----------
 def metric_box(label, value, color="#dfdbd2"):
@@ -109,11 +109,11 @@ def upload_root_folder(root_folder: str):
     return total, failed, num_series
 
 
-if "selected_folder" not in st.session_state:
-    st.session_state.selected_folder = ""
+if "dashboard.selected_folder" not in st.session_state:
+    st.session_state['dashboard.selected_folder'] = ""
 
-if "upload_summary" not in st.session_state:
-    st.session_state.upload_summary = None
+if "dashboard.upload_summary" not in st.session_state:
+    st.session_state['dashboard.upload_summary'] = None
 
 db = TinyDB(DB_PATH)
 studies = fetch_db_studies()
@@ -158,12 +158,12 @@ with pn2:
         if not folder:
             st.warning("No folder selected")
         else:
-            st.session_state.selected_folder = folder
+            st.session_state['dashboard.selected_folder'] = folder
 
             try:
                 total, failed, num_series = upload_root_folder(folder)
 
-                st.session_state.upload_summary = {
+                st.session_state['dashboard.upload_summary'] = {
                     "Total Files": total,
                     "Failed Files": failed,
                     "Number of Series":num_series
@@ -172,8 +172,8 @@ with pn2:
             except Exception as e:
                 st.error(str(e))
 
-    if st.session_state.upload_summary is not None:
-        summary = st.session_state.upload_summary
+    if st.session_state['dashboard.upload_summary'] is not None:
+        summary = st.session_state['dashboard.upload_summary']
         summary_columns = st.columns(len(summary))
 
         for col, (key, value) in zip(summary_columns, summary.items()):
@@ -182,5 +182,5 @@ with pn2:
 
         sync_orthanc_and_db()
         run_pipelines()
-        st.session_state.upload_summary = None
+        st.session_state['dashboard.upload_summary'] = None
         st.rerun()

@@ -99,16 +99,15 @@ def st_header(title="CLASP dashboard"):
     st.markdown(f"""
     <style>
     .block-container {{
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+        padding-top: 2rem
     }}
 
     .custom-title {{
         text-align: center;
-        margin-bottom: 70px;
+        margin-bottom: 2rem;
         font-size: 40px;
         font-family: Arial, sans-serif;
-        font-weight: bold;
+                
     }}
     </style>
 

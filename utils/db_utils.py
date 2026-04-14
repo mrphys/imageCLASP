@@ -19,7 +19,7 @@ def fetch_db_study(study_id):
     return [study for study in db.all() if study['orthanc_study_id'] == study_id][0]
 
 def fetch_db_series(study, series_orthanc_id):
-    return [series for series in study.series_list if series['orthanc_series_id'] == series_orthanc_id][0]
+    return [series for sid, series in study.series_dict.items() if sid == series_orthanc_id][0]
 
 def get_entered_patients():
     demo_path = 'tables/demographics.csv'

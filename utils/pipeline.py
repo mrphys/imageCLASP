@@ -3,14 +3,12 @@ from utils.db_utils import *
 from utils.plot_utils import *
 from utils.mri_sorter import MRI_Sorter
 from utils.sax_dl_utils import *
-from utils.roundel_utils import *
 from scipy.ndimage import zoom
 import copy
 from stqdm import stqdm
 
-DB_PATH = "image_clasp_db.json"
-DEMOGRAPHICS_PATH = "tables/demographics.csv"
-EXAMS_PATH = "tables/exams.csv"
+DB_PATH = st.session_state['clasp.DB_PATH'] 
+DEMOGRAPHICS_PATH = st.session_state['clasp.DEMOGRAPHICS_PATH']
 
 def load_or_create_csv(path, columns):
     os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -22,21 +20,6 @@ def load_or_create_csv(path, columns):
 
     df.to_csv(path, index=False)
     return df
-
-
-exam_columns = [
-    "orthanc_study_id", "patient_id", "study_date",
-    "lv_edv", "lv_esv", "lv_ef", "lv_mass",
-    "rv_edv", "rv_esv", "rv_ef", "rv_mass"
-]
-
-# demographics_columns = [
-    # "patient_id", "first_name", "last_name", "dob", "sex"
-# ]
-
-metrics_df = load_or_create_csv(EXAMS_PATH, exam_columns)
-# demographics_df = load_or_create_csv(DEMOGRAPHICS_PATH, demographics_columns)
-
 
 def sync_orthanc_and_db():
     db = TinyDB(DB_PATH)
@@ -124,13 +107,13 @@ def sax_segmentation_pipeline(study):
     sax_df = sax_df[sax_df['series_group'] == series_group]
     sax_orthanc_ids = set(sax_df['orthanc_series_id'])
 
-    progress_bar = st.progress(0, f"## **Segmentation SAX:**")
+    progress_bar = st.progress(0, f"## **Segmentating SAX:**")
     total = len(fetch_orthanc_instances_for_series_list(sax_orthanc_ids))
     completed = 0
     for sid, series in study.series_dict.items():
         if sid in sax_orthanc_ids:
             old_dcms = fetch_orthanc_dicoms_for_series(sid)
-            mask = run_inference_on_scan(old_dcms)
+            mask = run_inference_on_scan(old_dcms) * st.session_state['clasp.MASK_SCALER']
 
             new_orthanc_id = send_series_to_orthanc(
                 mask,
@@ -144,30 +127,30 @@ def sax_segmentation_pipeline(study):
         progress_bar.progress(completed / total, text = f"## **Segmentation SAX:** {completed}/{total} ({completed/total:.1%})")
 
 
-def stupid_roundel_pipeline(study):
-    df = pd.DataFrame([series.__dict__ for series in study.series_dict.values()])
-    sax_dl_df = df[(df['dl_orthanc_id'].notna()) & (df['roundel_orthanc_id'].isna())]
+# def stupid_roundel_pipeline(study):
+#     df = pd.DataFrame([series.__dict__ for series in study.series_dict.values()])
+#     sax_dl_df = df[(df['dl_orthanc_id'].notna()) & (df['roundel_orthanc_id'].isna())]
 
-    if sax_dl_df.empty:
-        return
+#     if sax_dl_df.empty:
+#         return
 
-    for series_id, dl_series_id in zip(sax_dl_df["orthanc_series_id"], sax_dl_df["dl_orthanc_id"]):
-        series = study.series_dict[series_id]
-        image_dicoms = fetch_orthanc_dicoms_for_series(series_id)
-        mask_dicoms = fetch_orthanc_dicoms_for_series(dl_series_id)
+#     for series_id, dl_series_id in zip(sax_dl_df["orthanc_series_id"], sax_dl_df["dl_orthanc_id"]):
+#         series = study.series_dict[series_id]
+#         image_dicoms = fetch_orthanc_dicoms_for_series(series_id)
+#         mask_dicoms = fetch_orthanc_dicoms_for_series(dl_series_id)
 
-        masked_images = [image.pixel_array * (mask.pixel_array > 0) for image, mask in zip(image_dicoms, mask_dicoms) ]
-        new_orthanc_id = send_series_to_orthanc(masked_images, image_dicoms, new_description='Roundel Processed')
-        series.roundel_orthanc_id = new_orthanc_id
+#         masked_images = [image.pixel_array * (mask.pixel_array > 0) for image, mask in zip(image_dicoms, mask_dicoms) ]
+#         new_orthanc_id = send_series_to_orthanc(masked_images, image_dicoms, new_description='Roundel Processed')
+#         series.roundel_orthanc_id = new_orthanc_id
 
-    metrics = get_volumes(fetch_orthanc_dicoms_for_series_list(df["dl_orthanc_id"].dropna().unique()))
-    metrics['orthanc_study_id'] = study.orthanc_study_id
-    metrics['patient_id'] = study.patient_id
-    metrics['study_date'] = study.study_date
+#     metrics = get_volumes(fetch_orthanc_dicoms_for_series_list(df["dl_orthanc_id"].dropna().unique()))
+#     metrics['orthanc_study_id'] = study.orthanc_study_id
+#     metrics['patient_id'] = study.patient_id
+#     metrics['study_date'] = study.study_date
 
-    metrics_df = pd.read_csv(EXAMS_PATH)
-    metrics_df = pd.concat([metrics_df, pd.DataFrame([metrics])]).set_index('orthanc_study_id')
-    metrics_df.to_csv(EXAMS_PATH)
+#     metrics_df = pd.read_csv(EXAMS_PATH)
+#     metrics_df = pd.concat([metrics_df, pd.DataFrame([metrics])]).set_index('orthanc_study_id')
+#     metrics_df.to_csv(EXAMS_PATH)
 
 
 

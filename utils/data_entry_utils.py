@@ -5,7 +5,7 @@ import pandas as pd
 import streamlit as st
 
 # ---------- Configuration ----------
-REFERENCE_PATH = 'reference'
+REFERENCE_PATH = st.session_state['clasp.REFERENCE_PATH'] 
 EVENTS_CSV = f"{REFERENCE_PATH}/events_list.csv"
 DIAGNOSES_CSV = f"{REFERENCE_PATH}/diagnoses_list.csv"
 PROCEDURES_CSV = f"{REFERENCE_PATH}/procedures_list.csv"
@@ -13,12 +13,31 @@ BLOOD_TESTS_CSV = f"{REFERENCE_PATH}/blood_tests_list.csv"
 BLOOD_UNITS_CSV = f"{REFERENCE_PATH}/blood_test_unit.csv"
 MEDICATIONS_CSV = f"{REFERENCE_PATH}/medications_list.csv"
 
-OUT_PATH = 'tables'
+OUT_PATH = st.session_state['clasp.OUT_PATH']
 clinical_entries = ['demographics','events', 'diagnoses', 'procedures','tests','test_values','medications']
 
-DEMOGRAPHICS_PATH = f"{OUT_PATH}/demographics.csv"
+DEMOGRAPHICS_PATH = st.session_state['clasp.DEMOGRAPHICS_PATH']
 
 MIN_DATE = date(1900, 1, 1)
+
+def clear_on_patient_change():
+    prev = st.session_state["data_entry.prev_patient"]
+    curr = st.session_state["data_entry.current_patient"]
+
+    if prev != curr:
+        for key in list(st.session_state.keys()):
+            if key.startswith("data_entry.") and key not in {
+                "data_entry.current_patient",
+                "data_entry.prev_patient",
+            }:
+                st.session_state.pop(key)
+
+    st.session_state["data_entry.prev_patient"] = curr
+    try:
+        st.session_state.pop('data_entry.initialized')
+    except:
+        pass
+
 
 @st.cache_data
 def load_options(
@@ -113,20 +132,18 @@ def load_demographics() -> pd.DataFrame:
             df[col] = ""
     
     if df.empty:
-        st.success("All Patients Data Entered!")
+        st.success("🎉 All data entries completed!")
         st.stop()
     return df
-
-
 
 
 def make_test_id() -> str:
     return str(uuid.uuid4())[:8]
 
 
-def load_current_patient_from_csv() -> None:
+def init_patient_from_csv() -> None:
     demo_df = load_demographics()
-    row = demo_df.iloc[st.session_state.patient_idx]
+    row = demo_df.iloc[st.session_state['data_entry.patient_idx']]
 
     patient_id = str(row.get("patient_id", "") or "")
     first_name = str(row.get("first_name", "") or "")
@@ -139,33 +156,14 @@ def load_current_patient_from_csv() -> None:
     else:
         dob = date(1900, 1, 1)
 
-    st.session_state['patient_id'] = patient_id
-    st.session_state['first_name'] = first_name
-    st.session_state['last_name'] = last_name
-    st.session_state['sex'] = sex if sex in ["F", "M", "Other", 'Missing'] else "Missing"
-    st.session_state['dob'] = dob
+    st.session_state['data_entry.patient_id'] = patient_id
+    st.session_state['data_entry.first_name'] = first_name
+    st.session_state['data_entry.last_name'] = last_name
+    st.session_state['data_entry.sex'] = sex if sex in ["F", "M", "Other", 'Missing'] else "Missing"
+    st.session_state['data_entry.dob'] = dob
 
     for entry in clinical_entries:
-        st.session_state[f'current_{entry}'] = []
-
-def process_pending_navigation() -> None:
-    demo_df = load_demographics()
-    pending_nav = st.session_state.get("pending_nav", None)
-    if pending_nav == "next":
-        if st.session_state.patient_idx < len(demo_df) - 1:
-            st.session_state.patient_idx += 1
-
-        load_current_patient_from_csv()
-        st.session_state.pending_nav = None
-        st.rerun()
-
-    elif pending_nav == "prev":
-        if st.session_state.patient_idx > 0:
-            st.session_state.patient_idx -= 1
-        load_current_patient_from_csv()
-        st.session_state.pending_nav = None
-        st.rerun()
-
+        st.session_state[f'data_entry.current_{entry}'] = []
 
 def add_record(
         state_list_name: str,
@@ -174,7 +172,7 @@ def add_record(
         requirement_msg: str,
     ) -> None:
 
-    if not st.session_state.patient_id:
+    if not st.session_state['data_entry.patient_id']:
         st.error("Patient ID is required.")
         return
 
@@ -182,7 +180,7 @@ def add_record(
         st.warning(requirement_msg)
         return
 
-    current = st.session_state[state_list_name]
+    current = st.session_state[f'{state_list_name}']
 
     if record_dict in current:
         return
@@ -191,11 +189,11 @@ def add_record(
 
 def save_data_entry():
     demographics_df = pd.DataFrame([{
-        "patient_id": st.session_state.patient_id,
-        "first_name": st.session_state.first_name,
-        "last_name": st.session_state.last_name,
-        "dob": str(st.session_state.dob),
-        "sex": st.session_state.sex,
+        "patient_id": st.session_state['data_entry.patient_id'],
+        "first_name": st.session_state['data_entry.first_name'],
+        "last_name": st.session_state['data_entry.last_name'],
+        "dob": str(st.session_state['data_entry.dob']),
+        "sex": st.session_state['data_entry.sex'],
         "data_entered":True
     }])
 
@@ -204,23 +202,21 @@ def save_data_entry():
         if entry == 'demographics':
             upsert_demographics_csv(demographics_df, f'{OUT_PATH}/{entry}.csv')
         else:
-            if len(st.session_state[f'current_{entry}'])>0:
-                append_csv(pd.DataFrame(st.session_state[f'current_{entry}']), f'{OUT_PATH}/{entry}.csv')
-        st.session_state[f'current_{entry}'] = []
+            if len(st.session_state[f'data_entry.current_{entry}'])>0:
+                append_csv(pd.DataFrame(st.session_state[f'data_entry.current_{entry}']), f'{OUT_PATH}/{entry}.csv')
 
     st.success("Record saved")
-    st.rerun()
 
 
 def multi_group_form(
-    label,
-    groups: dict,  # {"major": [...], "minor": [...]}
-):
+        label,
+        groups: dict,  # {"major": [...], "minor": [...]}
+    ):
     
-    state_key = f'current_{label.lower()}'
-    group_key = f'{label.lower()}_group'
-    type_field = f'{label.lower()}_type'
-    date_field = f'{label.lower()}_date'
+    state_key = f'data_entry.current_{label.lower()}'
+    group_key = f'data_entry.{label.lower()}_group'
+    type_field = f'data_entry.{label.lower()}_type'
+    date_field = f'data_entry.{label.lower()}_date'
     cols = st.columns(len(groups))
 
     for col, (group_name, options) in zip(cols, groups.items()):
@@ -245,7 +241,7 @@ def multi_group_form(
                     add_record(
                         state_key,
                         {
-                            "patient_id": st.session_state.patient_id,
+                            "patient_id": st.session_state['data_entry.patient_id'],
                             group_key: group_name,
                             type_field: entry_type,
                             date_field: str(entry_date),
@@ -253,7 +249,7 @@ def multi_group_form(
                         entry_type,
                         f"Select a {group_name} {label}.",
                     )
-    df = pd.DataFrame(st.session_state[state_key])
+    df = pd.DataFrame(st.session_state[f'{state_key}'])
     if not df.empty:
         st.dataframe(df[['patient_id',type_field, date_field]].rename(columns={
             type_field: f"{label} Type",

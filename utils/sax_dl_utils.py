@@ -198,7 +198,7 @@ def run_inference_on_scan(old_dcms):
 
     mask = zoom(mask, (1/pixel_spacing[0], 1/pixel_spacing[1], 1), order=0)
     mask = crop_pad_hw(mask, image_size[0], image_size[1])
-    mask = np.uint16(mask) * 500
+    mask = np.uint16(mask)
     mask = np.transpose(np.array(mask), (2,0,1))
 
 
