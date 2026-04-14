@@ -270,23 +270,61 @@ with tab6:
     if not df.empty:
         st.dataframe(df.set_index('patient_id'))
 
-
 # ---------- Global Save ----------
 st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-c1, _, c2, c3, _ = st.columns([0.4,0.1,0.2,0.2,1])
+
+# Initialize states
+if "confirm_save" not in st.session_state:
+    st.session_state.confirm_save = False
+if "saved" not in st.session_state:
+    st.session_state.saved = False
+
+c1, c2 = st.columns([0.5, 0.5])
+
 with c1:
-    saved = st.button("Save Record", key="data_entry.save_record_btn", type = 'primary', use_container_width=True)
+    if st.button(
+        "Save Record",
+        key="data_entry.save_record_btn",
+        type="primary",
+        use_container_width=True
+    ):
+        st.session_state.confirm_save = True
 
 with c2:
-    if saved:
-        if st.button("No",  type = 'secondary', use_container_width=True):
-            st.rerun() 
-with c3:
-    if saved:
-        if st.button("Yes", type = 'secondary', use_container_width=True):
-            if not st.session_state['data_entry.patient_id']:
-                st.error("Patient ID is missing.")
-            else:
-                save_data_entry()
-            clear_on_patient_change()
-            st.rerun()
+    if st.session_state.confirm_save:
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button(
+                "Yes, Save",
+                icon=":material/save:",
+                use_container_width=True
+            ):
+                if not st.session_state['data_entry.patient_id']:
+                    st.error("Patient ID is missing.")
+                else:
+                    save_data_entry()
+                    clear_on_patient_change()
+                    st.session_state.saved = True
+
+                st.session_state.confirm_save = False
+
+        with col2:
+            if st.button(
+                "Cancel",
+                icon=":material/cancel:",
+                use_container_width=True
+            ):
+                st.session_state.confirm_save = False
+                st.rerun()
+        
+        if not st.session_state.saved:
+            st.warning("Are you sure you want to save this record?")
+
+
+    if st.session_state.saved:
+        st.success("Saved successfully!")
+        time.sleep(1)
+        st.session_state.saved = False
+        st.rerun()

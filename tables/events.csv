@@ -1,0 +1,3 @@
+patient_id,events_group,events_type,events_date
+34567812,Major,Death,2026-04-14
+67812345,Major,Emergency Hospitalisation,2026-04-14

@@ -3,7 +3,7 @@ import uuid
 from datetime import date
 import pandas as pd
 import streamlit as st
-
+import time
 # ---------- Configuration ----------
 REFERENCE_PATH = st.session_state['clasp.REFERENCE_PATH'] 
 EVENTS_CSV = f"{REFERENCE_PATH}/events_list.csv"
@@ -204,8 +204,6 @@ def save_data_entry():
         else:
             if len(st.session_state[f'data_entry.current_{entry}'])>0:
                 append_csv(pd.DataFrame(st.session_state[f'data_entry.current_{entry}']), f'{OUT_PATH}/{entry}.csv')
-
-    st.success("Record saved")
 
 
 def multi_group_form(
