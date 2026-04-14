@@ -3,3 +3,4 @@ __pycache__
 clasp
 utils/cache
 utils/roundel
+*.npy
