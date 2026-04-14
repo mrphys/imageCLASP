@@ -24,44 +24,60 @@ def load_or_create_csv(path, columns):
 def sync_orthanc_and_db():
     db = TinyDB(DB_PATH)
     StudyQuery = Query()
-    existing_ids = [s["orthanc_study_id"] for s in db]
-    demo_record = {}
+
+    existing_study_ids = {s["orthanc_study_id"] for s in db}
     orthanc_studies = fetch_orthanc_studies()
+
+    # load demographics once
+    if os.path.exists(DEMOGRAPHICS_PATH):
+        demo_df = pd.read_csv(DEMOGRAPHICS_PATH)
+    else:
+        demo_df = pd.DataFrame(columns=[
+            "patient_id", "first_name", "last_name",
+            "sex", "dob", "data_entered"
+        ])
+
+    existing_patient_ids = set(demo_df["patient_id"]) if not demo_df.empty else set()
+
+    new_rows = []
+
     for study_info in orthanc_studies:
-        if study_info["ID"] in existing_ids:
+        if study_info["ID"] in existing_study_ids:
             continue
+
         study = Study(study_info)
-        
+
         series_list = fetch_orthanc_series_for_study(study.orthanc_study_id)
         for series_info in series_list:
             series = Series(series_info)
             study.series_dict[series.orthanc_series_id] = series
-        db.upsert(study.to_dict(), StudyQuery.study_uid == study.orthanc_study_id)
 
-        patient_name = study.patient_name.split('^')
+        db.upsert(
+            study.to_dict(),
+            StudyQuery.study_uid == study.orthanc_study_id
+        )
+
+        if study.patient_id in existing_patient_ids:
+            continue
+
+        patient_name = study.patient_name.split("^")
         last_name, first_name = patient_name
-        demo_record = {
-            'patient_id':study.patient_id,
-            'first_name':first_name, 
-            'last_name':last_name,
-            'sex':study.patient_sex,
-            'dob': pd.to_datetime(study.patient_dob, format="%Y%m%d").strftime("%Y-%m-%d"),
-            'data_entered':False
-        }
-        if demo_record:
-            if os.path.exists(DEMOGRAPHICS_PATH):
-                demo_df = pd.read_csv(DEMOGRAPHICS_PATH)
-            else:
-                demo_df = pd.DataFrame()  # or define columns if needed
 
-            demo_df = pd.concat([demo_df, pd.DataFrame([demo_record])], ignore_index=True)
-            demo_df.to_csv(DEMOGRAPHICS_PATH, index=False)
+        new_rows.append({
+            "patient_id": study.patient_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "sex": study.patient_sex,
+            "dob": pd.to_datetime(study.patient_dob, format="%Y%m%d").strftime("%Y-%m-%d"),
+            "data_entered": False
+        })
 
-        # studies = fetch_db_studies()
-        # if len(studies)>0:
-        #     for study in stqdm(studies, desc=f"Studies"):
-        #         mri_sorting_pipeline(study)
-        #         update_study(db, study)
+        existing_patient_ids.add(study.patient_id)
+
+    if new_rows:
+        demo_df = pd.concat([demo_df, pd.DataFrame(new_rows)], ignore_index=True)
+        demo_df.to_csv(DEMOGRAPHICS_PATH, index=False)
+
     db.close()
 
 def update_study(db, study):
