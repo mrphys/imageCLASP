@@ -1,6 +1,7 @@
 import requests
 import os
 import glob
+import shutil
 try:
     if os.path.exists('image_clasp_db.json'):
         os.remove('image_clasp_db.json')
@@ -8,6 +9,7 @@ try:
     for file in files:
         if 'exams' not in file:
             os.remove(file)
+    shutil.rmtree('utils/roundel')
 except Exception as e:
     print(e)
 

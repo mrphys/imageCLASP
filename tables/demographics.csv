@@ -1,5 +1,3 @@
 patient_id,first_name,last_name,sex,dob,data_entered
-6528642,Lucy,Startrek,F,1989-01-01,False
-34567812,Kevin,Fakename,M,1980-01-01,True
 23456781,Jack,Doe,F,1941-01-01,True
-67812345,Jane,Starship,F,2020-01-01,True
+8902345,Jean_luc,PICARD,F,2015-01-01,True

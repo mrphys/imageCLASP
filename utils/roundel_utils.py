@@ -20,6 +20,8 @@ import cv2
 import json
 from datetime import datetime
 import copy
+from utils.reset_utils import *
+import shutil
 
 root_path = Path(__file__).resolve().parent
 data_path = str(root_path / "roundel/data")
@@ -674,6 +676,7 @@ def smooth_zoom(mask, zoom=[4,4,1,1,1], sigma=5.0, to_discrete=True):
 # Initialization
 # --------------------------------------------------------------
 def initialize_app(study):
+    st.divider()
     st.session_state['roundel.N'] = len(labels.keys())
 
     progress_bar = st.progress(0, text=f"## **Loading Roundel**")
@@ -682,6 +685,7 @@ def initialize_app(study):
         progress_bar.progress(p, text=f'## **{msg}**')
 
     st.session_state['roundel.orthanc_study_id'] = study.orthanc_study_id
+    st.session_state['roundel.patient_id'] = study.patient_id
 
     df = pd.DataFrame([s.__dict__ for s in study.series_dict.values()])
     sax_dl_df = df[(df["dl_orthanc_id"].notna()) & (df["roundel_orthanc_id"].isna())]
@@ -865,6 +869,8 @@ def initialize_app(study):
     st.session_state['roundel.cached'] = cached
     st.session_state['roundel.saved'] = False
     st.session_state['roundel.initialized'] = True
+    st.session_state["roundel.view"] = 'EDV/ESV Finder 🔍'
+    st.session_state['roundel.edv_esv_selected'] = {"lv_dia_idx": None, "lv_sys_idx": None, "rv_dia_idx": None, "rv_sys_idx": None,"confirmed": False}
     progress_bar.empty()
 
 
@@ -875,9 +881,6 @@ def edv_esv_view():
         st.error("Select and confirm EDV/ESV first.")
         st.stop()
 
-    if "roundel.edv_esv_selected" not in st.session_state:
-        st.session_state['roundel.edv_esv_selected'] = {"lv_dia_idx": None, "lv_sys_idx": None, "rv_dia_idx": None, "rv_sys_idx": None,"confirmed": False}
-    
     H, W, D, T, N = [st.session_state['roundel.preprocessed'][k] for k in ["H","W","D","T","N"]]
     edv_esv_frames= st.session_state['roundel.preprocessed']['edv_esv_frames']
 
@@ -1215,6 +1218,7 @@ def final_result_view():
     rv_dia_idx = st.session_state['roundel.edv_esv_selected']["rv_dia_idx"]
     rv_sys_idx = st.session_state['roundel.edv_esv_selected']["rv_sys_idx"]
     orthanc_study_id = st.session_state['roundel.orthanc_study_id']
+    patient_id = st.session_state['roundel.patient_id']
 
     final_lv_gif_path = f"{results_path}/gifs/{orthanc_study_id}_lv.gif"
     final_rv_gif_path = f"{results_path}/gifs/{orthanc_study_id}_rv.gif"
@@ -1313,7 +1317,6 @@ def final_result_view():
 
 
     if save_button:
-
         with st.spinner('Saving...'):
             final_mask_2d_flat = flatten_4d_array(final_mask_2d * st.session_state['clasp.MASK_SCALER'])
 
@@ -1337,6 +1340,7 @@ def final_result_view():
             # save_mask_as_dicom_series(final_mask_2d, f'{dicom_mask_path}/{st.session_state['roundel.patient_name']}')
 
             combined_df = pd.DataFrame({
+                "patient_id": [patient_id],
                 "orthanc_study_id": [orthanc_study_id],
                 "lv_edv": [lv_edv],
                 "lv_esv": [lv_esv],
@@ -1366,7 +1370,18 @@ def final_result_view():
             st.success('Masks and Metrics Overwritten! ✅')
         else:
             st.success('Masks and Metrics Saved! ✅')
+        
 
-            
     elif st.session_state.get("roundel.saved", False):
         st.info('Masks and Metrics Previously Saved! ✅')
+
+    
+
+    if st.session_state["roundel.saved"] and st.button('Next Patient ➡️', use_container_width=True):
+        reset_app('roundel')
+        for filename in os.listdir(cache_dir):
+            file_path = os.path.join(cache_dir, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        st.rerun()
+        

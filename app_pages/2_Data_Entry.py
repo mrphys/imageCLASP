@@ -2,6 +2,9 @@ from utils.data_entry_utils import *
 from utils.pipeline import *
 from utils.theme_utils import *
 from utils.reset_utils import *
+
+reset_app('roundel')
+
 load_theme(secondary="#155a8a",
     secondary_hover="#1F4264",
     secondary_active="#12324D"

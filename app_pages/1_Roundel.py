@@ -4,7 +4,6 @@
 from utils.roundel_utils import *
 from utils.pipeline import *
 from utils.theme_utils import *
-from utils.reset_utils import *
 
 st.set_page_config(page_title="Roundel", layout='wide')
 load_theme()
@@ -33,7 +32,7 @@ for study in studies:
         study_date = datetime.strptime(study.study_date, "%Y%m%d").strftime("%d/%m/%Y")
         study_dict[study.orthanc_study_id] = study
         study_description[f'{first_name} {last_name} | {study_date} | {description}'] = study.orthanc_study_id
-
+        
 num_remaining_studies = len(study_dict)
 
 if num_remaining_studies == 0:
@@ -57,22 +56,23 @@ with col1:
         on_change=restart_app
     )
     study = study_dict[orthanc_study_id]
-    st.session_state['roundel.study'] = study
 
 # --------------------------------------------------------------
 # App
 # --------------------------------------------------------------
 
-view = st.segmented_control(
-    "Tab",
-    options=["EDV/ESV Finder 🔍", "Mask Editor 📝", "Final Result ✅"],
-    default = "EDV/ESV Finder 🔍",
-    label_visibility='hidden'
-)
-st.divider()
 
 if 'roundel.initialized' not in st.session_state:
     initialize_app(study)
+
+view = st.radio(
+    "Tab",
+    options=["EDV/ESV Finder 🔍", "Mask Editor 📝", "Final Result ✅"],
+    index=["EDV/ESV Finder 🔍", "Mask Editor 📝", "Final Result ✅"].index(st.session_state["roundel.view"]),
+    horizontal=True
+)
+st.session_state["roundel.view"] = view
+st.divider()
 
 # --------------------------------------------------------------
 # EDV/ESV Finder 

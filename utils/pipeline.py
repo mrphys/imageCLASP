@@ -129,6 +129,8 @@ def sax_segmentation_pipeline(study):
     for sid, series in study.series_dict.items():
         if sid in sax_orthanc_ids:
             old_dcms = fetch_orthanc_dicoms_for_series(sid)
+            ims = [ds.pixel_array for ds in old_dcms]
+
             mask = run_inference_on_scan(old_dcms) * st.session_state['clasp.MASK_SCALER']
 
             new_orthanc_id = send_series_to_orthanc(

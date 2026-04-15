@@ -13,6 +13,7 @@ from utils.reset_utils import *
 st.set_page_config(layout="wide")
 load_theme()
 reset_app('data_entry')
+reset_app('roundel')
 st_header('Clasp Dashboard')
 
 
@@ -144,14 +145,14 @@ with pn1:
 
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
-        metric_box("Roundelled", num_roundelled)
+        metric_box("Roundelled", f'{num_roundelled}/{num_segmented}')
 
     with col2:
         metric_box("Studies", num_studies)
 
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
-        metric_box("Data Entered", num_entered)
+        metric_box("Data Entered", f'{num_roundelled}/{total_patients}')
 
 
 
