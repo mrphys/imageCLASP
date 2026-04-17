@@ -152,7 +152,7 @@ with pn1:
 
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
-        metric_box("Data Entered", f'{num_roundelled}/{total_patients}')
+        metric_box("Data Entered", f'{num_entered}/{total_patients}')
 
 
 

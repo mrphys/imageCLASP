@@ -497,10 +497,10 @@ def thicken_close_fill_and_smooth(strokes, stroke_width):
 
 
 def wrap(key, min_val, max_val):
-    if st.session_state[f'roundel.{key}'] > max_val:
-        st.session_state[f'roundel.{key}'] = min_val
-    elif st.session_state[f'roundel.{key}'] < min_val:
-        st.session_state[f'roundel.{key}'] = max_val
+    if st.session_state[f'{key}'] > max_val:
+        st.session_state[f'{key}'] = min_val
+    elif st.session_state[f'{key}'] < min_val:
+        st.session_state[f'{key}'] = max_val
 
 
 
@@ -686,6 +686,7 @@ def initialize_app(study):
 
     st.session_state['roundel.orthanc_study_id'] = study.orthanc_study_id
     st.session_state['roundel.patient_id'] = study.patient_id
+    st.session_state['roundel.study_date'] = study.study_date
 
     df = pd.DataFrame([s.__dict__ for s in study.series_dict.values()])
     sax_dl_df = df[(df["dl_orthanc_id"].notna()) & (df["roundel_orthanc_id"].isna())]
@@ -905,19 +906,19 @@ def edv_esv_view():
         col_edv, col_esv = st.columns(2)
 
         with col_edv:
-            lv_dia_idx = frame_index_slider(T, edv_esv_frames, display_lv_dia_idx, 'LV End-Diastolic Index', disabled_flag, key = 'lv_edv')
+            lv_dia_idx = frame_index_slider(T, edv_esv_frames, display_lv_dia_idx, 'LV End-Diastolic Index', disabled_flag, key = 'roundel.lv_edv')
 
         with col_esv:
-            lv_sys_idx = frame_index_slider(T, edv_esv_frames, display_lv_sys_idx, 'LV End-Systolic Index',disabled_flag, key = 'lv_esv')
+            lv_sys_idx = frame_index_slider(T, edv_esv_frames, display_lv_sys_idx, 'LV End-Systolic Index',disabled_flag, key = 'roundel.lv_esv')
 
     with col_rv:
         st.markdown('#### Right Ventricle')
         col_edv, col_esv = st.columns(2)
         with col_edv:
-            rv_dia_idx = frame_index_slider(T, edv_esv_frames, display_rv_dia_idx, 'RV End-Diastolic Index', disabled_flag, key = 'rv_edv')
+            rv_dia_idx = frame_index_slider(T, edv_esv_frames, display_rv_dia_idx, 'RV End-Diastolic Index', disabled_flag, key = 'roundel.rv_edv')
 
         with col_esv:
-            rv_sys_idx = frame_index_slider(T, edv_esv_frames, display_rv_sys_idx, 'RV End-Systolic Index',disabled_flag, key = 'rv_esv')
+            rv_sys_idx = frame_index_slider(T, edv_esv_frames, display_rv_sys_idx, 'RV End-Systolic Index',disabled_flag, key = 'roundel.rv_esv')
 
 
     st.write('')
@@ -1219,6 +1220,7 @@ def final_result_view():
     rv_sys_idx = st.session_state['roundel.edv_esv_selected']["rv_sys_idx"]
     orthanc_study_id = st.session_state['roundel.orthanc_study_id']
     patient_id = st.session_state['roundel.patient_id']
+    study_date = st.session_state['roundel.study_date']
 
     final_lv_gif_path = f"{results_path}/gifs/{orthanc_study_id}_lv.gif"
     final_rv_gif_path = f"{results_path}/gifs/{orthanc_study_id}_rv.gif"
@@ -1342,6 +1344,7 @@ def final_result_view():
             combined_df = pd.DataFrame({
                 "patient_id": [patient_id],
                 "orthanc_study_id": [orthanc_study_id],
+                "exam_date": [pd.to_datetime(study_date, dayfirst=True).date()],
                 "lv_edv": [lv_edv],
                 "lv_esv": [lv_esv],
                 "lv_sv": [lv_sv],

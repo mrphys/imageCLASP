@@ -7,9 +7,9 @@ try:
         os.remove('image_clasp_db.json')
     files = glob.glob(f'tables/*')
     for file in files:
-        if 'exams' not in file:
-            os.remove(file)
+        os.remove(file)
     shutil.rmtree('utils/roundel')
+    
 except Exception as e:
     print(e)
 

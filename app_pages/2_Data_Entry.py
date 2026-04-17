@@ -3,17 +3,17 @@ from utils.pipeline import *
 from utils.theme_utils import *
 from utils.reset_utils import *
 
-reset_app('roundel')
+reset_app("roundel")
 
 load_theme(secondary="#155a8a",
     secondary_hover="#1F4264",
     secondary_active="#12324D"
     )
 
-if not os.path.exists(st.session_state['clasp.DEMOGRAPHICS_PATH']):
+
+if not os.path.exists(st.session_state["clasp.DEMOGRAPHICS_PATH"]):
     st.warning("There are no patients in the database!")
     st.stop()
-
 
 # ---------- UI ----------
 st_header("Clinical Data Entry")
@@ -22,7 +22,7 @@ demo_df = load_demographics()
 num_remaining_patients = len(demo_df)
 
 names = [
-    f"{row['first_name']} {row['last_name']} | {row['patient_id']}"
+    f"{row["first_name"]} {row["last_name"]} | {row["patient_id"]}"
     for _, row in demo_df.iterrows()
 ]
 
@@ -33,7 +33,7 @@ if "data_entry.prev_patient" not in st.session_state:
     st.session_state["data_entry.prev_patient"] = names[0]
 
 
-col1, col2 = st.columns([0.26, 0.7])
+col1,  col2 = st.columns([0.26, 0.7])
 
 with col1:
     selected_name = st.selectbox(
@@ -52,282 +52,120 @@ if "data_entry.initialized" not in st.session_state:
     st.session_state["data_entry.initialized"] = True
 
 # ---------- Header ----------
-top1, top2 = st.columns([3, 1])
-
-tabs = ["Demographics", "Events", "Diagnoses", "Procedures", "Tests", "Medications"]
-
-# ---------- Tabs ----------
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(tabs)
-
-# --- Tab 1: Demographics ---
-with tab1:
-    with st.form("patient_form"):
-        c1, c2 = st.columns(2)
-
-        with c1:
-            st.text_input("First name", key="data_entry.first_name")
-            st.text_input("Last name", key="data_entry.last_name")
-
-        with c2:
-            st.selectbox("Sex", ["F", "M", "Other","Missing"], key="data_entry.sex")
-            st.date_input(
-                "Date of birth",
-                min_value=MIN_DATE,
-                max_value=date.today(),
-                key="data_entry.dob",
-                format="DD-MM-YYYY",
-            )
-
-        confirm_patient = st.form_submit_button("Confirm demographics")
-
-# --- Tab 2: Events ---
-with tab2:
-    multi_group_form(
-        label="Events",
-        groups={
-            "Major": major_events,
-            "Minor": minor_events
-        }
-    )
-    
-
-# --- Tab 3: Diagnoses ---
-with tab3:
-    multi_group_form(
-        label="Diagnoses",
-        groups={
-            "Primary": primary_options,
-            "Secondary": secondary_options
-        }
-    )
 
 
-# --- Tab 4: Procedures ---
-with tab4:
-    multi_group_form(
-        label="Procedures",
-        groups={
-            "Surgical": surgery_options,
-            "Interventional": intervention_options
-        }
-    )
+with col2:
+    selection = st.pills("", ['Configure'], )
 
-# --- Tab 5: Tests ---
-with tab5:
-    test_kind = st.selectbox(
-        "Test type",
-        ["Blood test", "CPEX"],
-        key="data_entry.test_kind_select",
-    )
+if selection == 'Configure':
+    password = st.text_input("Enter a password", type="password")
 
-    if test_kind == "Blood test":
-        with st.form("blood_test_form", clear_on_submit=True):
-            left, right = st.columns(2)
+    accessed = False
+    if password == 'admin':
+        accessed = True
 
-            with left:
-                blood_test_type = st.selectbox(
-                    "Blood test",
-                    blood_test_options,
-                    key="data_entry.blood_test_type",
-                )
-                blood_test_date = st.date_input(
-                    "Date of blood test",
-                    value=date.today(),
+    if accessed:
+        st.write('You have admin access')
+
+
+
+else:
+    tabs = st.tabs(CLINICAL_ENTRIES)
+    # --- Tab 1: Demographics ---
+    with tabs[0]:
+        with st.form("patient_form"):
+            c1, c2 = st.columns(2)
+
+            with c1:
+                st.text_input("First name", key="data_entry.first_name")
+                st.text_input("Last name", key="data_entry.last_name")
+
+            with c2:
+                st.selectbox("Sex", ["F", "M", "Other"], key="data_entry.sex", index=None)
+                st.date_input(
+                    "Date of birth",
                     min_value=MIN_DATE,
                     max_value=date.today(),
-                    key="data_entry.blood_test_date",
-                    format="DD-MM-YYYY",
+                    key="data_entry.dob",
+                    format="DD-MM-YYYY"
+
                 )
 
-            with right:
-                blood_result = st.number_input("Result", key="data_entry.blood_result")
-                blood_units = st.selectbox("Unit", blood_units_options, key="data_entry.blood_units")
+            confirm_patient = st.form_submit_button("Confirm demographics")
 
-            if st.form_submit_button("Add blood test"):
-                if not st.session_state['data_entry.patient_id']:
-                    st.error("Patient ID is required.")
-                elif not blood_test_type or blood_result == 0:
-                    st.warning("Select a blood test and enter a result.")
-                else:
-                    test_id = make_test_id()
+    tab_index = 1
 
-                    st.session_state['data_entry.current_tests'].append(
-                        {
-                            "test_id": test_id,
-                            "patient_id": st.session_state['data_entry.patient_id'],
-                            "test_group": "blood",
-                            "test_type": blood_test_type,
-                            "test_date": str(blood_test_date),
-                        }
-                    )
-
-                    st.session_state['data_entry.current_test_values'].append(
-                        {
-                            "test_id": test_id,
-                            "parameter_name": "result",
-                            "parameter_value": blood_result,
-                            "units": blood_units,
-                        }
-                    )
-
-    elif test_kind == "CPEX":
-        with st.form("cpex_form", clear_on_submit=True):
-            left, right = st.columns(2)
-
-            with left:
-                cpex_date = st.date_input(
-                    "Date of CPEX",
-                    value=date.today(),
-                    min_value=MIN_DATE,
-                    max_value=date.today(),
-                    key="data_entry.cpex_date",
-                    format="DD-MM-YYYY",
-                )
-                cpex_vo2 = st.number_input("VO2", key="data_entry.cpex_vo2")
-                cpex_vevco2 = st.number_input("VE/VCO2", key="data_entry.cpex_vevco2")
-
-            with right:
-                cpex_rer = st.number_input("RER", key="data_entry.cpex_rer")
-                cpex_peak_hr = st.number_input("Peak HR", key="data_entry.cpex_peak_hr")
-                cpex_peak_bp = st.number_input("Peak BP", key="data_entry.cpex_peak_bp")
-
-            if st.form_submit_button("Add CPEX"):
-                if not st.session_state['data_entry.patient_id']:
-                    st.error("Patient ID is required.")
-                elif not (cpex_vo2 or cpex_vevco2 or cpex_rer or cpex_peak_hr or cpex_peak_bp):
-                    st.warning("Enter at least one CPEX value.")
-                else:
-                    test_id = make_test_id()
-
-                    st.session_state['data_entry.current_tests'].append(
-                        {
-                            "test_id": test_id,
-                            "patient_id": st.session_state['data_entry.patient_id'],
-                            "test_group": "cpex",
-                            "test_type": "CPEX",
-                            "test_date": str(cpex_date),
-                        }
-                    )
-
-                    value_rows = [
-                        ("VO2", cpex_vo2, "ml/kg/min"),
-                        ("VE/VCO2", cpex_vevco2, ""),
-                        ("RER", cpex_rer, ""),
-                        ("Peak HR", cpex_peak_hr, "bpm"),
-                        ("Peak BP", cpex_peak_bp, "mmHg"),
-                    ]
-
-                    for param_name, param_value, units in value_rows:
-                        if param_value:
-                            st.session_state['data_entry.current_test_values'].append(
-                                {
-                                    "test_id": test_id,
-                                    "parameter_name": param_name,
-                                    "parameter_value": param_value,
-                                    "units": units,
-                                }
-                            )
-    df = pd.DataFrame(st.session_state['data_entry.current_tests'])
-    if not df.empty:
-        st.dataframe(df)
-
-
-# --- Tab 6: Medications ---
-with tab6:
-    with st.form("medication_form", clear_on_submit=True):
-        left, right = st.columns(2)
-
-        with left:
-            medication_name = st.selectbox("Medication", medication_options, key="data_entry.medication_name")
-            medication_date = st.date_input(
-                "Medication date",
-                value=date.today(),
-                min_value=MIN_DATE,
-                max_value=date.today(),
-                key="data_entry.medication_date",
-                format="DD-MM-YYYY",
+    for label in multi_forms.keys():
+        with tabs[tab_index]:
+            create_multi_form(
+                label=label,
+                forms=multi_forms[label]
             )
+        tab_index += 1
 
-        with right:
-            medication_dose = st.number_input("Dose", key="data_entry.medication_dose")
-            medication_frequency = st.selectbox(
-                "Frequency",
-                ["OD", "BD", "TDS", "QDS"],
-                key="data_entry.medication_frequency",
+    for label in single_forms.keys():
+        with tabs[tab_index]:
+            create_single_form(
+                label,
+                single_forms[label]
             )
+        tab_index += 1
 
-        if st.form_submit_button("Add medication"):
-            add_record(
-                "data_entry.current_medications",
-                {
-                    "patient_id": st.session_state['data_entry.patient_id'],
-                    "medication": medication_name,
-                    "medication_date": str(medication_date),
-                    "dose": medication_dose,
-                    "frequency": medication_frequency,
-                },
-                medication_name,
-                "Enter a medication name.",
-            )
-    df = pd.DataFrame(st.session_state['data_entry.current_medications'])
-    if not df.empty:
-        st.dataframe(df.set_index('patient_id'))
+    # ---------- Global Save ----------
+    st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
-# ---------- Global Save ----------
-st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
-
-# Initialize states
-if "confirm_save" not in st.session_state:
-    st.session_state.confirm_save = False
-if "saved" not in st.session_state:
-    st.session_state.saved = False
-
-c1, c2 = st.columns([0.5, 0.5])
-
-with c1:
-    if st.button(
-        "Save Record",
-        key="data_entry.save_record_btn",
-        type="primary",
-        use_container_width=True
-    ):
-        st.session_state.confirm_save = True
-
-with c2:
-    if st.session_state.confirm_save:
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            if st.button(
-                "Yes, Save",
-                icon=":material/save:",
-                use_container_width=True
-            ):
-                if not st.session_state['data_entry.patient_id']:
-                    st.error("Patient ID is missing.")
-                else:
-                    save_data_entry()
-                    clear_on_patient_change()
-                    st.session_state.saved = True
-
-                st.session_state.confirm_save = False
-
-        with col2:
-            if st.button(
-                "Cancel",
-                icon=":material/cancel:",
-                use_container_width=True
-            ):
-                st.session_state.confirm_save = False
-                st.rerun()
-        
-        if not st.session_state.saved:
-            st.warning("Are you sure you want to save this record?")
-
-
-    if st.session_state.saved:
-        st.success("Saved successfully!")
-        time.sleep(1)
+    # Initialize states
+    if "confirm_save" not in st.session_state:
+        st.session_state.confirm_save = False
+    if "saved" not in st.session_state:
         st.session_state.saved = False
-        st.rerun()
+
+    c1, c2 = st.columns([0.5, 0.5])
+
+    with c1:
+        if st.button(
+            "Save Record",
+            key="data_entry.save_record_btn",
+            type="primary",
+            use_container_width=True
+        ):
+            st.session_state.confirm_save = True
+
+    with c2:
+        if st.session_state.confirm_save:
+
+            col1, col2 = st.columns(2)
+
+            with col1:
+                if st.button(
+                    "Yes, Save",
+                    icon=":material/save:",
+                    use_container_width=True
+                ):
+                    if not st.session_state["data_entry.patient_id"]:
+                        st.error("Patient ID is missing.")
+                    else:
+                        save_data_entry()
+                        clear_on_patient_change()
+                        st.session_state.saved = True
+
+                    st.session_state.confirm_save = False
+
+            with col2:
+                if st.button(
+                    "Cancel",
+                    icon=":material/cancel:",
+                    use_container_width=True
+                ):
+                    st.session_state.confirm_save = False
+                    st.rerun()
+            
+            if not st.session_state.saved:
+                st.warning("Are you sure you want to save this record?")
+
+
+        if st.session_state.saved:
+            st.success("Saved successfully!")
+            time.sleep(1)
+            st.session_state.saved = False
+            st.rerun()

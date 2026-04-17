@@ -78,7 +78,7 @@ class Study:
                 "orthanc_study_id": orthanc_study_info["ID"],
                 "study_uid": orthanc_study_info["MainDicomTags"].get("StudyInstanceUID"),
                 "patient_name": orthanc_study_info["PatientMainDicomTags"].get("PatientName"),
-                "patient_id": orthanc_study_info["PatientMainDicomTags"].get("PatientID"),
+                "patient_id": str(orthanc_study_info["PatientMainDicomTags"].get("PatientID")),
                 "patient_sex": orthanc_study_info["PatientMainDicomTags"].get("PatientSex"),
                 "patient_dob": orthanc_study_info["PatientMainDicomTags"].get("PatientBirthDate"),
                 "study_date": orthanc_study_info["MainDicomTags"].get("StudyDate"),
