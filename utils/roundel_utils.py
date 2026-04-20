@@ -864,7 +864,7 @@ def initialize_app(study):
     st.session_state['roundel.lv_frames'] = None
     st.session_state['roundel.rv_frames'] = None
     st.session_state['roundel.view_mode'] = "Static"
-    st.session_state['roundel.brush_mode'] = "Paint ✏️"
+    st.session_state['roundel.brush_mode'] = "Draw ✐"
     st.session_state['roundel.stroke_width'] = "thin"
     st.session_state['roundel.edit_made'] = False
     st.session_state['roundel.cached'] = cached
@@ -995,19 +995,40 @@ def get_overlay(image_slice, mask_state, H, W, N, OVERLAY_COLORS, ventricle):
 
 
 def select_brush(N, ventricle):
-    """Brush selection UI for channel, action, and stroke width."""
-    action = st.radio("Brush Stroke Selection", 
-                      options=["Paint ✏️", "Erase ✂️"],  
-                      index=["Paint ✏️", "Erase ✂️"].index(st.session_state['roundel.brush_mode']),
-                      horizontal=True)
-    st.session_state['roundel.brush_mode'] = action
     
+    """Brush selection UI for channel, action, and stroke width."""
+
+    st.markdown(
+        "<div style='color:#155a8a; margin-bottom:-10px; margin-top:20px; font-weight:600;'>Choose Brush</div>",
+        unsafe_allow_html=True
+    )
+    action = st.pills(
+        "Type", 
+        options=["Draw ✐", "Erase ✂"],  
+        selection_mode="single",
+        default=st.session_state['roundel.brush_mode']
+    )
+
+    if action is not None:
+        st.session_state['roundel.brush_mode'] = action
+
+    brush_mode = st.session_state['roundel.brush_mode']
+
+
     stroke_width_map = {"thin":6,"medium":20,"thick":40}
-    stroke_width_sel = st.radio("Stroke Width", 
-                                options=list(stroke_width_map.keys()),  
-                                index= list(stroke_width_map.keys()).index(st.session_state["roundel.stroke_width"]), 
-                                horizontal=True)
-    st.session_state['roundel.stroke_width'] = stroke_width_sel
+
+    stroke_width_sel = st.pills(
+        "Thickness", 
+        options=list(stroke_width_map.keys()),  
+        selection_mode="single",
+        default=st.session_state["roundel.stroke_width"]
+    )
+
+    if stroke_width_sel is not None:
+        st.session_state['roundel.stroke_width'] = stroke_width_sel
+
+    stroke_width = st.session_state['roundel.stroke_width']
+
     if ventricle == 'lv':
         valid_channels = [lv_myo_idx, lv_idx]
     elif ventricle == 'rv':
@@ -1015,14 +1036,29 @@ def select_brush(N, ventricle):
     else:
         valid_channels = [i for i in range(N) if i != background_idx]
 
-    if action == "Paint ✏️":
-        channel = st.radio(
-            "Mask",
+    if action == "Draw ✐":
+        default_channel = rv_myo_idx if ventricle == 'rv' else lv_myo_idx
+
+        if "channel" not in st.session_state:
+            st.session_state["channel"] = default_channel
+            st.session_state["channel_ventricle"] = ventricle
+
+        if st.session_state["channel_ventricle"] != ventricle:
+            st.session_state["channel"] = default_channel
+            st.session_state["channel_ventricle"] = ventricle
+
+        channel_val = st.pills(
+            "Structure",
             options=valid_channels,
             format_func=lambda x: BRUSH_LABELS[x],
-            index=0,
-            horizontal=True
+            selection_mode="single",
+            default=st.session_state["channel"],
         )
+
+        if channel_val is not None:
+            st.session_state["channel"] = channel_val
+
+        channel = st.session_state["channel"]
     else:
         channel = 0
     stroke_width = stroke_width_map[stroke_width_sel]
@@ -1042,12 +1078,42 @@ def mask_editor_view():
     image=st.session_state['roundel.preprocessed']["smooth_image"]
 
     with col1:
-        ventricle_label = st.radio("Ventricle", options=["Left Ventricle","Right Ventricle"],  index = 0, horizontal=True)
+        st.markdown(
+            "<div style='color:#155a8a; margin-bottom:-25px; font-weight:600;'>Choose Ventricle</div>",
+            unsafe_allow_html=True
+        )
+        options = ["Left Ventricle", "Right Ventricle"]
+
+        if "ventricle_label" not in st.session_state:
+            st.session_state.ventricle_label = options[0]
+
+        val = st.pills("", options, selection_mode="single", default=st.session_state.ventricle_label)
+
+        if val is not None:
+            st.session_state.ventricle_label = val
+
+        ventricle_label = st.session_state.ventricle_label
+
         ventricle = 'lv' if 'left' in ventricle_label.lower() else 'rv'
         channel, action, stroke_width = select_brush(N, ventricle)
 
-        st.caption('Image Selection')
-        idx_label = st.radio("Frame", options=["End-Diastole","End-Systole"],  index = 0, horizontal=True)
+        st.markdown(
+            "<div style='color:#155a8a; margin-bottom:-10px; margin-top:20px; font-weight:600;'>Choose Position</div>",
+            unsafe_allow_html=True
+        )
+        frame_options = ["End-Diastole", "End-Systole"]
+
+        if "idx_label" not in st.session_state:
+            st.session_state.idx_label = frame_options[0]
+
+        val = st.pills("Frame", options=frame_options, selection_mode="single", default=st.session_state.idx_label)
+
+        if val is not None:
+            st.session_state.idx_label = val
+
+        idx_label = st.session_state.idx_label
+
+
         d, reset_canvas = slice_navigation(D)
 
 
@@ -1062,9 +1128,19 @@ def mask_editor_view():
     mask_slice = edited_mask[:,:,d,idx,:]
 
     with col2:
-        edit_mode = st.radio('Segmentation Editor',['Editor','Viewer'], index=0, horizontal=True)
+        st.markdown(
+            "<div style='color:#155a8a; margin-bottom:-10px; font-weight:600;'>Segmentation Editor</div>",
+            unsafe_allow_html=True
+        )
+        val = st.pills(
+            "",
+            options=["Hide masks"],
+            selection_mode="single",
+        )
+
+        edit_mode = val 
         stroke_color = f"rgba{OVERLAY_COLORS[background_idx][:3]+(0.7,)}" if action == "Erase ✂️" else f"rgba{OVERLAY_COLORS[channel][:3]+(0.65,)}"
-        if edit_mode == 'Viewer':
+        if edit_mode == 'Hide masks':
             st.image(image_slice, width=DISPLAY_W)
         else:
             # Initialize canvas state
@@ -1160,13 +1236,12 @@ def mask_editor_view():
 
     # ---------- right column preview ----------
     with col3:
-        view_mode = st.radio(
-            "Corrected Mask",
-            ["Static", "Viewer"],
-            index=0,
-            horizontal=True,
+        
+        st.markdown(
+            "<div style='color:#155a8a; margin-bottom:40px; font-weight:600;'>All Slices</div>",
+            unsafe_allow_html=True
         )
-
+        
         if st.session_state[f'roundel.{ventricle}_frames'] is None or st.session_state['roundel.edit_made']:
             make_video(
                 image,
@@ -1180,12 +1255,10 @@ def mask_editor_view():
             st.session_state[f'roundel.{ventricle}_frames'] = [frame.copy() for frame in ImageSequence.Iterator(gif)]
             st.session_state['roundel.edit_made'] = False
 
-        if view_mode == "Static":
-            view_image = st.session_state[f'roundel.{ventricle}_frames'][0 if idx_label == "End-Diastole" else 1]
-            width = int(DISPLAY_W * 1.5)
-        elif view_mode == "Viewer":
-            view_image = image_slice
-            width = int(DISPLAY_W)
+        
+        view_image = st.session_state[f'roundel.{ventricle}_frames'][0 if idx_label == "End-Diastole" else 1]
+        width = int(DISPLAY_W * 1.5)
+        
 
         st.image(view_image, width = width)
 

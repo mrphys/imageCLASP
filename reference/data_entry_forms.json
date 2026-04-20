@@ -1,0 +1,67 @@
+{
+  "multi": {
+    "Events": {
+      "Major": "major",
+      "Minor": "minor"
+    },
+    "Diagnoses": {
+      "Primary": "primary",
+      "Secondary": "secondary"
+    },
+    "Procedures": {
+      "Surgical": "surgery",
+      "Interventional": "intervention"
+    }
+  },
+  "single": {
+    "Medication": {
+      "Medication": "medication",
+      "Dose": 0,
+      "Frequency": ["OD", "BD", "TDS", "QDS"]
+    },
+    "Catheter": {
+      "RA Area": 0,
+      "RV Pressure": 0,
+      "PA Pressure": 0,
+      "Cardiac Output": 0,
+      "Cardiac Index": 0,
+      "TR Vmax": 0,
+      "PCWP": 0,
+      "LVEDP": 0,
+      "Shunt Present": [0, 1],
+      "Shunt Type": ["None", "ASD", "VSD", "PDA", "Other"]
+    },
+    "Echo": {
+      "LAVi": 0,
+      "LV EF": 0,
+      "LVEDD": 0,
+      "LVESD": 0,
+      "RA Area": 0,
+      "RV Basal Diameter": 0,
+      "TAPSE": 0,
+      "S' Wave": 0,
+      "E/e' Ratio": 0,
+      "TR Vmax": 0,
+      "RVSP": 0,
+      "Diastolic Function": ["Normal", "Grade I", "Grade II", "Grade III"],
+      "Valvular Disease": ["None", "Mild", "Moderate", "Severe"],
+      "Regional Wall Motion": ["Normal", "Hypokinesia", "Akinesia", "Dyskinesia"]
+    },
+    "Bloods": {
+        "Test": [
+            "Hb (g/L)",
+            "WBC (×10^9/L)",
+            "BNP (pg/mL)",
+            "Troponin (ng/L)",
+            "CK (U/L)",
+            "CRP (mg/L)",
+            "Urea (mmol/L)",
+            "Creatinine (µmol/L)",
+            "LDL (mmol/L)",
+            "HDL (mmol/L)",
+            "Cholesterol (mmol/L)"
+        ],
+        "Value": 0
+        }
+  }
+}

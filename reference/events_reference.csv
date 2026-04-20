@@ -1,4 +1,4 @@
-event_type,event_group
+value,type
 Death,major
 Emergency Hospitalisation,major
 Cardiac arrest,major

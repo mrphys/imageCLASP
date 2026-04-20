@@ -145,6 +145,10 @@ def load_theme(
         color: var(--secondary-active) !important;
         background: none !important;
     }}
+    
+
+
+    
 
     </style>
     """, unsafe_allow_html=True)

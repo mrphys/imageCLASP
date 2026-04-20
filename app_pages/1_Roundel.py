@@ -65,19 +65,34 @@ with col1:
 if 'roundel.initialized' not in st.session_state:
     initialize_app(study)
 
-view = st.radio(
+view_options = ["EDV/ESV Finder", "Mask Editor", "Final Result"]
+
+# repair old stored values
+if "roundel.view" not in st.session_state:
+    st.session_state["roundel.view"] = view_options[0]
+elif isinstance(st.session_state["roundel.view"], int):
+    st.session_state["roundel.view"] = view_options[st.session_state["roundel.view"]]
+elif st.session_state["roundel.view"] not in view_options:
+    st.session_state["roundel.view"] = view_options[0]
+
+val = st.pills(
     "Tab",
-    options=["EDV/ESV Finder 🔍", "Mask Editor 📝", "Final Result ✅"],
-    index=["EDV/ESV Finder 🔍", "Mask Editor 📝", "Final Result ✅"].index(st.session_state["roundel.view"]),
-    horizontal=True
+    options=view_options,
+    selection_mode="single",
+    default=st.session_state["roundel.view"],
 )
+
+if val is not None:
+    st.session_state["roundel.view"] = val
+
+view = st.session_state["roundel.view"]
 st.session_state["roundel.view"] = view
 st.divider()
 
 # --------------------------------------------------------------
 # EDV/ESV Finder 
 # --------------------------------------------------------------
-if view == "EDV/ESV Finder 🔍":
+if view == "EDV/ESV Finder":
     edv_esv_view()
 
 
@@ -85,12 +100,12 @@ if view == "EDV/ESV Finder 🔍":
 # Mask Editor 
 # --------------------------------------------------------------
 
-if view == "Mask Editor 📝":
+if view == "Mask Editor":
     mask_editor_view()
 
 
 # --------------------------------------------------------------
 # Final Result
 # --------------------------------------------------------------
-if view == "Final Result ✅":
+if view == "Final Result":
     final_result_view()

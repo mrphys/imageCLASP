@@ -3,115 +3,31 @@ import uuid
 from datetime import date
 import pandas as pd
 import streamlit as st
-import time
+import time, json
 # ---------- Configuration ----------
 REFERENCE_PATH = st.session_state['clasp.REFERENCE_PATH'] 
-EVENTS_CSV = f"{REFERENCE_PATH}/events_list.csv"
-DIAGNOSES_CSV = f"{REFERENCE_PATH}/diagnoses_list.csv"
-PROCEDURES_CSV = f"{REFERENCE_PATH}/procedures_list.csv"
-BLOOD_TESTS_CSV = f"{REFERENCE_PATH}/blood_tests_list.csv"
-BLOOD_UNITS_CSV = f"{REFERENCE_PATH}/blood_test_unit.csv"
-MEDICATIONS_CSV = f"{REFERENCE_PATH}/medications_list.csv"
-
 OUT_PATH = st.session_state['clasp.OUT_PATH']
+CONFIG_PATH = 'reference/data_entry_forms.json' #st.session_state['clasp.CONFIG_PATH']
 
-@st.cache_data
-def load_options(
-    path: str,
-    value_col: str,
-    group_col: str | None = None,
-    group_value: str | None = None,
-    include_blank: bool = True,
-    ) -> list[str]:
+def load_options(label: str, group_value: str | None = None) -> list[str]:
+    path = f"{REFERENCE_PATH}/{label.lower()}_reference.csv"
     df = pd.read_csv(path)
-    df.columns = [c.strip() for c in df.columns]
-
-    if value_col not in df.columns:
-        raise ValueError(
-            f"{path} is missing required column: {value_col}. "
-            f"Found columns: {df.columns.tolist()}"
-        )
+    value_col = 'value'
+    group_col= 'type'
 
     df[value_col] = df[value_col].astype(str).str.strip()
-
-    if group_col and group_value:
-        if group_col not in df.columns:
-            raise ValueError(
-                f"{path} is missing required column: {group_col}. "
-                f"Found columns: {df.columns.tolist()}"
-            )
+    if group_value is not None:
         df[group_col] = df[group_col].astype(str).str.strip().str.lower()
         df = df[df[group_col] == group_value.lower()]
 
     options = df[value_col].dropna().tolist()
-    return [""] + options if include_blank else options
+    return options
 
-major_events = load_options(EVENTS_CSV, "event_type", "event_group", "major")
-minor_events = load_options(EVENTS_CSV, "event_type", "event_group", "minor")
-primary_options = load_options(DIAGNOSES_CSV, "diagnosis_type", "group", "primary")
-secondary_options = load_options(DIAGNOSES_CSV, "diagnosis_type", "group", "secondary")
-surgery_options = load_options(PROCEDURES_CSV, "procedure_type", "procedure_group", "surgery")
-intervention_options = load_options(PROCEDURES_CSV, "procedure_type", "procedure_group", "intervention")
-medication_options = load_options(MEDICATIONS_CSV, "medication_name")
+with open(CONFIG_PATH, "r") as f:
+    config = json.load(f)
 
-
-multi_forms = {
-    "Events": {
-        "Major": major_events,
-        "Minor": minor_events,
-    },
-    "Diagnoses": {
-        "Primary": primary_options,
-        "Secondary": secondary_options,
-    },
-    "Procedures": {
-        "Surgical": surgery_options,
-        "Interventional": intervention_options,
-    }
-}
-
-single_forms = {
-    "Medications":{
-        "Medication": medication_options,
-        "Dose": 0,
-        "Frequency": ["OD", "BD", "TDS", "QDS"]
-    }, 
-
-    "Catheter":{
-        "RA Area": 0,
-        "RV Pressure": 0,
-        "PA Pressure": 0,
-        "Cardiac Output": 0,
-        "Cardiac Index": 0,
-        "TR Vmax": 0,
-        "PCWP": 0,
-        "LVEDP": 0,
-        "Shunt Present": [0, 1],
-        "Shunt Type": ["None", "ASD", "VSD", "PDA", "Other"]
-    }, 
-
-    "Echo":{
-        "LAVi": 0,
-        "LV EF": 0,
-        "LVEDD": 0,
-        "LVESD": 0,
-        "RA Area": 0,
-        "RV Basal Diameter": 0,
-        "TAPSE": 0,
-        "S' Wave": 0,
-        "E/e' Ratio": 0,
-        "TR Vmax": 0,
-        "RVSP": 0,
-        "Diastolic Function": ["Normal", "Grade I", "Grade II", "Grade III"],
-        "Valvular Disease": ["None", "Mild", "Moderate", "Severe"],
-        "Regional Wall Motion": ["Normal", "Hypokinesia", "Akinesia", "Dyskinesia"]
-    },
-    "Bloods": {
-        "Test": ['HB (g/L)','WBC'], # numerical
-        "Value": 0
-    },
-
-}
+multi_forms = config['multi']
+single_forms = config['single']
 
 
 CLINICAL_ENTRIES = ['Demographics'] + list(multi_forms.keys()) + list(single_forms.keys())
@@ -224,30 +140,61 @@ def init_patient_from_csv() -> None:
     for entry in CLINICAL_ENTRIES:
         st.session_state[f'data_entry.current_{entry.lower()}'] = []
 
-def add_record(
-        state_list_name: str,
-        record_dict: dict,
-        requirement_check,
-        requirement_msg = '',
-    ) -> None:
 
-    if not st.session_state['data_entry.patient_id']:
+def add_record(
+        state_key: str,
+        record: dict,
+        full_requirement_check: bool = True
+    ) -> None:
+    # normalize keys: replace spaces with underscores
+    record = {
+        (k.replace(" ", "_") if isinstance(k, str) else k): v.replace(" ", "_") if isinstance(v, str) else v
+        for k, v in record.items()
+    }
+
+
+    patient_id = st.session_state.get("data_entry.patient_id")
+    if not patient_id:
         st.error("Patient ID is required.")
         return
 
-    if not requirement_check:
-        st.warning(requirement_msg)
+    date_key = next((k for k in record if "date" in k.lower()), None)
+    date_value = record.get(date_key)
+
+    if date_value is None or date_value == "" or pd.isna(date_value) or str(date_value) == "None":
+        st.warning("Date is required")
         return
 
-    current = st.session_state[f'{state_list_name}']
+    excluded_keys = {date_key, "patient_id"}
 
-    if record_dict in current:
+    other_values = {
+        k: v for k, v in record.items()
+        if k not in excluded_keys
+    }
+
+    if full_requirement_check:
+        missing = [k for k, v in other_values.items() if v is None or v == "" or str(v) == "None"]
+        if missing:
+            st.warning("Missing entries")
+            return
+    else:
+        has_at_least_one_other = any(
+            v is not None and v != "" and str(v) != "None"
+            for v in other_values.values()
+        )
+        if not has_at_least_one_other:
+            st.warning("Missing entries")
+            return
+
+    current = st.session_state.get(state_key, [])
+
+    if record in current:
         return
 
-    current.append(record_dict)
+    current.append(record)
+    st.session_state[state_key] = current
 
-
-
+    
 
 def save_data_entry():
     demographics_df = pd.DataFrame([{
@@ -261,16 +208,70 @@ def save_data_entry():
 
 
     for entry in CLINICAL_ENTRIES:
+        entry = entry.lower()
         if entry == 'demographics':
             upsert_demographics_csv(demographics_df, f'{OUT_PATH}/{entry.lower()}.csv')
         else:
             if len(st.session_state[f'data_entry.current_{entry.lower()}'])>0:
                 df = pd.DataFrame(st.session_state[f'data_entry.current_{entry.lower()}'])
-                columns = {c: c.replace("_", " ").title().replace("Id", "ID") for c in df.columns}
-                df = df.rename(columns=columns).set_index("Patient ID")
-                df = df.groupby(["Patient ID", f"{entry} Date"]).last().reset_index()
+                group_cols = ["patient_id", f"{entry}_date", f"{entry}_type"]
+
+                if f"{entry}_type" in df.columns:
+                    df = df.groupby(group_cols).last().reset_index()
+                else:
+                    df = df.groupby(["patient_id", f"{entry}_date"]).last().reset_index()
+
                 append_csv(df, f'{OUT_PATH}/{entry.lower()}.csv')
 
+
+def choose_entry_format(option_input, label, form_name, value_field):
+    key = f"data_entry.{value_field}_{form_name}"
+    field_label = f"{form_name} {label}"
+
+    if option_input == 0:
+        entry = st.number_input(
+            field_label,
+            key=key,
+            value=None,
+            placeholder="Enter a value"
+        )
+
+    elif isinstance(option_input, str):
+        options = load_options(label, None)
+        entry = st.selectbox(
+            label,
+            options,
+            key=key,
+            index=None
+        )
+
+    # elif isinstance(option_input, list) and len(option_input) == 1:
+    #     path = f"{REFERENCE_PATH}/{label.lower()}_reference.csv"
+    #     df = pd.read_csv(path)        
+    #     subtypes = df['type'].unique()
+
+    #     type = st.selectbox(
+    #         f'{label} Type',
+    #         subtypes
+    #     )
+    #     options = load_options(label, type)
+    #     entry = st.selectbox(
+    #         label,
+    #         options,
+    #         key=key,
+    #         index=None
+    #     )
+
+
+    else:
+        entry = st.selectbox(
+            field_label,
+            option_input,
+            key=key,
+            index=None
+        )
+
+    return entry
 
 def create_multi_form(
         label,
@@ -295,32 +296,19 @@ def create_multi_form(
                     key=f"data_entry.{date_field}_{form_name}",
                     format="DD-MM-YYYY",
                 )
-
-                if options == 0:
-                    entry_type = st.number_input(
-                        f"{form_name} {label}",
-                        key=f"data_entry.{value_field}_{form_name}", 
-                        value=None, 
-                        placeholder="Enter a value"
-                    )
-                else:
-                    entry_type = st.selectbox(
-                        f"{form_name} {label}",
-                        options,
-                        key=f"data_entry.{value_field}_{form_name}", index=None
-                    )
+                entry = choose_entry_format(options, label, form_name, value_field)
 
                 if st.form_submit_button(f"Add {form_name} {label}"):
+                    record = {
+                        "patient_id": st.session_state['data_entry.patient_id'],
+                        date_field: str(entry_date),
+                        type_field: form_name,
+                        value_field: entry,
+                    }
                     add_record(
-                        state_key,
-                        {
-                            "patient_id": st.session_state['data_entry.patient_id'],
-                            date_field: str(entry_date),
-                            type_field: form_name,
-                            value_field: entry_type,
-                        },
-                        entry_type,
-                        f"Select a {form_name} {label}.",
+                        state_key = state_key,
+                        record = record,
+                        full_requirement_check=True
                     )
     df = pd.DataFrame(st.session_state[f'{state_key}'])
     if not df.empty:
@@ -330,7 +318,6 @@ def create_multi_form(
 def create_single_form(label, forms: dict, num_cols=3):
 
     state_key = f"data_entry.current_{label.lower()}"
-    type_field = f"{label.lower()}_type"
     value_field = f"{label.lower()}_value"
     date_field = f"{label.lower()}_date"
 
@@ -357,30 +344,22 @@ def create_single_form(label, forms: dict, num_cols=3):
 
             for col, (form_name, options) in zip(cols, row_items):
                 with col:
-                    key = f"data_entry.{value_field}_{form_name}"
+                    entry = choose_entry_format(options, label, form_name, value_field)
 
-                    if options is None or options == 0:
-                        st.number_input(f"{form_name}", key=key, value=None, placeholder="Enter a value")
-                    else:
-                        st.selectbox(f"{form_name}", options, key=key, index=None)
-
-        submitted = st.form_submit_button(f"Add {label}")
-
-    if submitted:
-        record = {
-            "patient_id": st.session_state["data_entry.patient_id"],
-            date_field: str(entry_date),
-        }
-        for form_name, options in forms_items:
-            key = f"data_entry.{value_field}_{form_name}"
-            entry_type = st.session_state.get(key)
-            record[form_name] = st.session_state[f"data_entry.{value_field}_{form_name}"]
-            
-        add_record(
-            state_key,
-            record,
-            requirement_check = True
-        )
+        if st.form_submit_button(f"Add {label}"):
+            record = {
+                "patient_id": st.session_state["data_entry.patient_id"],
+                date_field: str(entry_date),
+            }
+            for form_name, options in forms_items:
+                key = f"data_entry.{value_field}_{form_name}"
+                record[form_name] = st.session_state[f"data_entry.{value_field}_{form_name}"]
+                
+            add_record(
+                state_key = state_key,
+                record = record,
+                full_requirement_check = False
+            )
 
     df = pd.DataFrame(st.session_state.get(state_key, []))
     if not df.empty:

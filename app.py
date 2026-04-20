@@ -25,7 +25,6 @@ pg = st.navigation([
     st.Page("app_pages/1_Roundel.py", title="Roundel", icon=":material/adjust:"),
     st.Page("app_pages/2_Data_Entry.py", title="Data Entry", icon=":material/note_alt:"),
     st.Page("app_pages/3_Query.py", title="Query Data", icon=":material/description:"),
-    st.Page("app_pages/4_Admin.py", title="Admin", icon=":material/lock:")
 ])
 
 pg.run()
