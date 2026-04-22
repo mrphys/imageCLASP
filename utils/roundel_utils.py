@@ -1162,8 +1162,8 @@ def mask_editor_view():
                 stroke_color=stroke_color,
                 background_image=get_overlay(image_slice, mask_slice, H, W, N, OVERLAY_COLORS, ventricle),
                 update_streamlit=True,
-                height = H*DISPLAY_W/W,
-                width=DISPLAY_W,
+                # height = H*DISPLAY_W/W,
+                # width=DISPLAY_W,
                 drawing_mode='freedraw',
                 key=st.session_state['roundel.canvas']['canvas_key']+ ventricle
             )
@@ -1417,7 +1417,7 @@ def final_result_view():
             combined_df = pd.DataFrame({
                 "patient_id": [patient_id],
                 "orthanc_study_id": [orthanc_study_id],
-                "exam_date": [pd.to_datetime(study_date, dayfirst=True).date()],
+                "exams_date": [pd.to_datetime(study_date, dayfirst=True).date()],
                 "lv_edv": [lv_edv],
                 "lv_esv": [lv_esv],
                 "lv_sv": [lv_sv],

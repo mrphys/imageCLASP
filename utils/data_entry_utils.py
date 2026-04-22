@@ -91,7 +91,7 @@ def upsert_demographics_csv(row_df: pd.DataFrame, path: str) -> None:
 
 
 def load_demographics() -> pd.DataFrame:
-    df = pd.read_csv(DEMOGRAPHICS_PATH)
+    df = pd.read_csv(DEMOGRAPHICS_PATH, dtype={"patient_id": str})
     df = df.loc[df['data_entered'] == False]
     df.columns = [c.strip() for c in df.columns]
 
@@ -100,8 +100,12 @@ def load_demographics() -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing required columns in demographics CSV: {missing}")
 
-    df["patient_id"] = df["patient_id"].astype(str).str.strip()
-
+    df["patient_id"] = (
+        pd.to_numeric(df["patient_id"], errors="coerce")
+        .astype("Int64")
+        .astype(str)
+    )
+    
     for col in ["first_name", "last_name", "sex", "dob"]:
         if col not in df.columns:
             df[col] = ""
@@ -134,8 +138,8 @@ def init_patient_from_csv() -> None:
     st.session_state['data_entry.patient_id'] = patient_id
     st.session_state['data_entry.first_name'] = first_name
     st.session_state['data_entry.last_name'] = last_name
-    st.session_state['data_entry.sex'] = sex if sex in ["F", "M", "Other", 'Missing'] else "Missing"
-    st.session_state['data_entry.dob'] = dob
+    st.session_state['data_entry.sex'] = sex if sex in ["F", "M", "Other"] else None
+    st.session_state['data_entry.dob'] = dob 
 
     for entry in CLINICAL_ENTRIES:
         st.session_state[f'data_entry.current_{entry.lower()}'] = []
@@ -226,46 +230,26 @@ def save_data_entry():
 
 def choose_entry_format(option_input, label, form_name, value_field):
     key = f"data_entry.{value_field}_{form_name}"
-    field_label = f"{form_name} {label}"
-
     if option_input == 0:
         entry = st.number_input(
-            field_label,
+            form_name,
             key=key,
             value=None,
             placeholder="Enter a value"
         )
 
     elif isinstance(option_input, str):
-        options = load_options(label, None)
+        options = load_options(label, option_input)
         entry = st.selectbox(
-            label,
+            form_name,
             options,
             key=key,
             index=None
         )
 
-    # elif isinstance(option_input, list) and len(option_input) == 1:
-    #     path = f"{REFERENCE_PATH}/{label.lower()}_reference.csv"
-    #     df = pd.read_csv(path)        
-    #     subtypes = df['type'].unique()
-
-    #     type = st.selectbox(
-    #         f'{label} Type',
-    #         subtypes
-    #     )
-    #     options = load_options(label, type)
-    #     entry = st.selectbox(
-    #         label,
-    #         options,
-    #         key=key,
-    #         index=None
-    #     )
-
-
     else:
         entry = st.selectbox(
-            field_label,
+            form_name,
             option_input,
             key=key,
             index=None
@@ -288,6 +272,8 @@ def create_multi_form(
         with col:
             with st.form(f"{label}_{form_name}", clear_on_submit=True):
 
+                entry = choose_entry_format(options, label, f'{form_name} {label}', value_field)
+
                 entry_date = st.date_input(
                     f"Date of {form_name} {label}", 
                     value=None,
@@ -296,7 +282,6 @@ def create_multi_form(
                     key=f"data_entry.{date_field}_{form_name}",
                     format="DD-MM-YYYY",
                 )
-                entry = choose_entry_format(options, label, form_name, value_field)
 
                 if st.form_submit_button(f"Add {form_name} {label}"):
                     record = {
@@ -335,7 +320,7 @@ def create_single_form(label, forms: dict, num_cols=3):
         forms_items = list(forms.items())
         n = len(forms_items)
 
-        num_cols = 2 if n < 3 else (3 if n % 2 == 1 else 4)
+        num_cols = 2 if n < 3 else 3
 
         num_rows = (n + num_cols - 1) // num_cols
         for i in range(num_rows):

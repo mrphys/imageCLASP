@@ -347,7 +347,12 @@ if st.button("Run Query", type="primary"):
 
 if st.session_state.query_result is not None:
     df = st.session_state.query_result
-    st.dataframe(df, use_container_width=True)
+    df["patient_id"] = (
+        pd.to_numeric(df["patient_id"], errors="coerce")
+        .astype("Int64")
+        .astype(str)
+    )
+    st.dataframe(df.set_index('patient_id'), use_container_width=True)
     st.download_button(
         "Download CSV",
         data=df.to_csv(index=False).encode("utf-8"),

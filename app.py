@@ -10,6 +10,8 @@ SESSION = requests.Session()
 SESSION.auth = AUTH
 SESSION.trust_env = False
 
+if not os.path.exists('tables'):
+    os.makedirs('tables')
 
 if 'clasp.DB_PATH' not in st.session_state:
     st.session_state['clasp.DB_PATH'] = "image_clasp_db.json"

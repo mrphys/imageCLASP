@@ -31,45 +31,70 @@ if "data_entry.current_patient" not in st.session_state:
 
 if "data_entry.prev_patient" not in st.session_state:
     st.session_state["data_entry.prev_patient"] = names[0]
+    
+col1, col2 = st.columns([0.26, 0.7])
 
+# ---------- Configure toggle ----------
+with col2:
+    selection = st.pills("", ['Configure'])
 
-col1,  col2 = st.columns([0.26, 0.7])
+configure_mode = selection == 'Configure'
 
+# ---------- Left column ----------
 with col1:
-    selected_name = st.selectbox(
-        f"Select Patient ({num_remaining_patients} Patients Left)",
-        options=names,
-        key="data_entry.current_patient",
-        on_change=clear_on_patient_change
-    )
+    if not configure_mode:
+        selected_name = st.selectbox(
+            f"Select Patient ({num_remaining_patients} Patients Left)",
+            options=names,
+            key="data_entry.current_patient",
+            on_change=clear_on_patient_change
+        )
 
-    patient_idx = names.index(selected_name)
-    st.session_state["data_entry.patient_idx"] = patient_idx
+        patient_idx = names.index(selected_name)
+        st.session_state["data_entry.patient_idx"] = patient_idx
 
-
+# ---------- Init ----------
 if "data_entry.initialized" not in st.session_state:
     init_patient_from_csv()
     st.session_state["data_entry.initialized"] = True
 
-# ---------- Header ----------
+# ---------- Right column ----------
+with col1:
+    if configure_mode:
+        if "accessed" not in st.session_state:
+            st.session_state.accessed = False
+
+        if not st.session_state.accessed:
+            password = st.text_input("Enter a password", type="password")
+
+            if password == "admin":
+                st.session_state.accessed = True
+                st.rerun()
+        else:
+            table = st.selectbox("Tables", ["Diagnoses", "Events", "Procedures"], index=None)
 
 
-with col2:
-    selection = st.pills("", ['Configure'], )
+if st.session_state.accessed:
+    df = pd.DataFrame(
+        [{"Primary": [""], "Secondary": [""]}]
+    )
 
-if selection == 'Configure':
-    password = st.text_input("Enter a password", type="password")
+    edited_df = st.data_editor(
+        df,
+        num_rows="dynamic",
+        use_container_width=True,
+        column_config={
+            "Primary": st.column_config.ListColumn(
+                "Primary Diagnoses",
+            ),
+            "Secondary": st.column_config.ListColumn(
+                "Secondary Diagnoses",
+            ),
+        },
+    )
 
-    accessed = False
-    if password == 'admin':
-        accessed = True
 
-    if accessed:
-        st.write('You have admin access')
-
-
-
-else:
+if not configure_mode:
     tabs = st.tabs(CLINICAL_ENTRIES)
     # --- Tab 1: Demographics ---
     with tabs[0]:
