@@ -38,7 +38,7 @@ col1, col2 = st.columns([0.26, 0.7])
 with col2:
     selection = st.pills("", ['Configure'])
 
-configure_mode = selection == 'Configure'
+configure_mode = selection == False#'Configure'
 
 # ---------- Left column ----------
 with col1:
@@ -58,40 +58,40 @@ if "data_entry.initialized" not in st.session_state:
     init_patient_from_csv()
     st.session_state["data_entry.initialized"] = True
 
-# ---------- Right column ----------
-with col1:
-    if configure_mode:
-        if "accessed" not in st.session_state:
-            st.session_state.accessed = False
+# # ---------- Configure ----------
+# with col1:
+#     if configure_mode:
+#         if "accessed" not in st.session_state:
+#             st.session_state.accessed = False
 
-        if not st.session_state.accessed:
-            password = st.text_input("Enter a password", type="password")
+#         if not st.session_state.accessed:
+#             password = st.text_input("Enter a password", type="password")
 
-            if password == "admin":
-                st.session_state.accessed = True
-                st.rerun()
-        else:
-            table = st.selectbox("Tables", ["Diagnoses", "Events", "Procedures"], index=None)
+#             if password == "admin":
+#                 st.session_state.accessed = True
+#                 st.rerun()
+#         else:
+#             table = st.selectbox("Tables", ["Diagnoses", "Events", "Procedures"], index=None)
 
 
-if st.session_state.accessed:
-    df = pd.DataFrame(
-        [{"Primary": [""], "Secondary": [""]}]
-    )
+# if st.session_state.accessed:
+#     df = pd.DataFrame(
+#         [{"Primary": [""], "Secondary": [""]}]
+#     )
 
-    edited_df = st.data_editor(
-        df,
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            "Primary": st.column_config.ListColumn(
-                "Primary Diagnoses",
-            ),
-            "Secondary": st.column_config.ListColumn(
-                "Secondary Diagnoses",
-            ),
-        },
-    )
+#     edited_df = st.data_editor(
+#         df,
+#         num_rows="dynamic",
+#         use_container_width=True,
+#         column_config={
+#             "Primary": st.column_config.ListColumn(
+#                 "Primary Diagnoses",
+#             ),
+#             "Secondary": st.column_config.ListColumn(
+#                 "Secondary Diagnoses",
+#             ),
+#         },
+#     )
 
 
 if not configure_mode:
