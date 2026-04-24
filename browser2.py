@@ -1,32 +1,9 @@
+import pandas as pd
 import streamlit as st
-import requests
-from utils.pipeline import *
-from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import subprocess
-import sys
-import glob
-from utils.theme_utils import *
-from utils.reset_utils import *
-
-
-st.set_page_config(layout="wide")
-load_theme()
-reset_app('data_entry')
-reset_app('roundel')
-st_header('Clasp Dashboard')
-
-
-if "dashboard.initialised" not in st.session_state:
-    sync_orthanc_and_db()
-    # run_pipelines()
-    st.session_state['dashboard.initialised'] = True
+import os
 
 def file_browser():
-    import os
-    import glob
-    import pandas as pd
-    import streamlit as st
+    st.divider()
 
     base_path = os.path.expanduser("~")
 
@@ -42,24 +19,14 @@ def file_browser():
     def list_dirs(path):
         try:
             dirs = []
-            is_home_level = os.path.abspath(path) == os.path.expanduser("~")
-
             for d in os.listdir(path):
                 full = os.path.join(path, d)
                 if os.path.isdir(full) and not d.startswith("."):
-                    if is_home_level:
+                    if has_dcm_in_tree(full):
                         dirs.append(d)
-                    else:
-                        if has_dcm_in_tree(full):
-                            dirs.append(d)
-
             return sorted(dirs)
-
         except PermissionError:
             return []
-
-    def display_name(name):
-        return name.replace("\\", "/") + "/"
 
     def breadcrumbs(path):
         home = os.path.expanduser("~")
@@ -80,9 +47,6 @@ def file_browser():
     if "dashboard.upload_path" not in st.session_state:
         st.session_state["dashboard.upload_path"] = base_path
 
-    if "dashboard.selected_folders" not in st.session_state:
-        st.session_state["dashboard.selected_folders"] = set()
-
     current_path = st.session_state["dashboard.upload_path"]
 
     crumbs = breadcrumbs(current_path)
@@ -90,20 +54,19 @@ def file_browser():
 
     for i, (name, crumb_path) in enumerate(crumbs):
         with cols[i]:
-            label = display_name(name)
-
             if crumb_path == current_path:
-                st.button(label, disabled=True, use_container_width=True)
+                st.button(name, disabled=True, use_container_width=True)
             else:
-                if st.button(label, key=f"crumb_{crumb_path}", use_container_width=True):
+                if st.button(name, key=f"crumb_{crumb_path}", use_container_width=True):
                     st.session_state["dashboard.upload_path"] = crumb_path
                     st.rerun()
+
+    st.markdown("---")
 
     dirs = list_dirs(current_path)
 
     if not dirs:
-        n_files = len(glob.glob(os.path.join(current_path, "*.dcm")))
-        st.metric(label="DICOM files", value=n_files)
+        st.caption("No subfolders with .dcm files.")
         return
 
     df = pd.DataFrame({
@@ -118,31 +81,37 @@ def file_browser():
         use_container_width=True,
         column_order=("folder", "select"),
         column_config={
-            "folder": st.column_config.TextColumn("Folder", disabled=True, width='medium'),
-            "select": st.column_config.CheckboxColumn("Select", width='medium'),
+            "folder": st.column_config.TextColumn("Folder", disabled=True),
+            "select": st.column_config.CheckboxColumn("Select"),
             "path": None,
         },
         disabled=["folder"],
     )
 
-    selected = set(edited[edited["select"]]["path"].tolist())
-    st.session_state["selected_folders"] = selected
+    selected = edited[edited["select"]]
 
-    col1, col2 = st.columns(2)
+    if not selected.empty:
+        st.session_state["dashboard.upload_path"] = selected.iloc[0]["path"]
+        st.rerun()
+    return st.session_state["dashboard.upload_path"]
 
-    with col1:
-        if st.button("Confirm folders", use_container_width=True, type = 'primary'):
-            st.session_state["dashboard.upload_path"] = current_path
-            st.session_state["dashboard.selected_folders"] = selected
-            st.rerun()
 
-    with col2:
-        if st.button("Go ➡️", use_container_width=True):
-            if selected:
-                st.session_state["dashboard.upload_path"] = list(selected)[0]
-                st.rerun()
-    selected = st.session_state["dashboard.selected_folders"]
-    return selected
+import streamlit as st
+import requests
+from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import subprocess
+import sys
+import glob
+from tinydb import TinyDB
+DB_PATH = 'image_clasp_db.json'
+
+
+st.set_page_config(layout="wide")
+
+
+if "dashboard.initialised" not in st.session_state:
+    st.session_state['dashboard.initialised'] = True
 
 
 # ---------- Hard-coded Orthanc settings ----------
@@ -160,6 +129,20 @@ def metric_box(label, value, color="#dfdbd2"):
         <div style="font-size:35px; font-weight:700;">{value}</div>
     </div>
     """, unsafe_allow_html=True)
+
+# ---------- to allow UI folder picking ----------
+def pick_folder_external() -> str | None:
+    script_path = (Path(__file__).parent / ".." / "utils" / "pick_folder.py").resolve()
+    result = subprocess.run(
+        [sys.executable, str(script_path)],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0:
+        folder = result.stdout.strip()
+        return folder or None
+
+    return None
 
 # ---------- Upload helpers ----------
 def get_max_workers():
@@ -194,7 +177,6 @@ def upload_root_folder(root_folder: str):
         futures = set()
 
         for file_path in iter_files():
-            futures.add(executor.submit(upload_orthanc_file, file_path))
             total += 1
 
         progress_bar = st.progress(0, f"## **Uploading Files:**")
@@ -231,21 +213,12 @@ if "dashboard.upload_summary" not in st.session_state:
     st.session_state['dashboard.upload_summary'] = None
 
 db = TinyDB(DB_PATH)
-studies = fetch_db_studies()
-
-total_patients = len(np.unique([study.patient_id for study in studies]))
-num_studies = len(studies)
-num_entered = len(get_entered_patients())
-
-num_segmented = 0
-num_roundelled = 0
-for study in studies:
-    df = pd.DataFrame([series.__dict__ for series in study.series_dict.values()])
-    num_segmented+=(df['dl_orthanc_id'].notna()).any()
-    num_roundelled+=(df['roundel_orthanc_id'].notna()).any()
-
-
-pn1, pn2 = st.columns([0.75, 1.5])
+total_patients = 1
+num_roundelled = 1
+num_segmented = 1
+num_entered = 1
+num_studies = 1
+pn1, spacer, pn2 = st.columns([1.5, 0.1, 1.5])
 with pn1:
     col1, col2 = st.columns([1, 1])
 
@@ -266,49 +239,29 @@ with pn1:
 
 
 with pn2:
-    if "dashboard.upload_summary" not in st.session_state:
-        st.session_state["dashboard.upload_summary"] = None
 
-    if "dashboard.selected_folder" not in st.session_state:
-        st.session_state["dashboard.selected_folder"] = None
+    if st.button("Upload DICOM Folder", type="primary", use_container_width=True):
+        folder = file_browser()
 
-    if "dashboard.show_upload_button" not in st.session_state:
-        st.session_state["dashboard.show_upload_button"] = True
+        if not folder:
+            st.warning("No folder selected")
+        else:
+            st.session_state['dashboard.selected_folder'] = folder
 
-    if "dashboard.open_file_browser" not in st.session_state:
-        st.session_state["dashboard.open_file_browser"] = False
+            try:
+                total, failed, num_series, num_studies = upload_root_folder(folder)
 
+                st.session_state['dashboard.upload_summary'] = {
+                    "Number of Studies":num_studies,
+                    "Number of Series":num_series,
+                    "Total Files": total,
+                    "Failed Files": failed
+                }
 
-    # STEP 1: open browser
-    if st.session_state["dashboard.show_upload_button"]:
-        if st.button("Upload DICOM Folder", type="primary", use_container_width=True):
-            st.session_state["dashboard.open_file_browser"] = True
-            st.session_state["dashboard.show_upload_button"] = False
-            st.rerun()
+            except Exception as e:
+                st.error(str(e))
 
-
-    # STEP 2: show file browser
-    if st.session_state["dashboard.open_file_browser"]:
-        selected_folders = file_browser()
-        if selected_folders:
-            st.session_state["dashboard.selected_folders"] = set()
-            for folder in selected_folders:
-                try:
-                    total, failed, num_series, num_studies = upload_root_folder(folder)
-
-                    st.session_state["dashboard.upload_summary"] = {
-                        "Number of Studies": num_studies,
-                        "Number of Series": num_series,
-                        "Total Files": total,
-                        "Failed Files": failed
-                    }
-                    st.session_state["dashboard.show_upload_button"] = True
-                    st.session_state["dashboard.open_file_browser"] = False
-
-                except Exception as e:
-                    st.error(str(e))
-
-    if st.session_state['dashboard.upload_summary']:
+    if st.session_state['dashboard.upload_summary'] is not None:
         summary = st.session_state['dashboard.upload_summary']
         summary_columns = st.columns(len(summary))
 
@@ -316,7 +269,7 @@ with pn2:
             with col:
                 st.metric(label=key, value=value)
 
-        sync_orthanc_and_db()
-        run_pipelines()
+        # sync_orthanc_and_db()
+        # run_pipelines()
         st.session_state['dashboard.upload_summary'] = None
         st.rerun()

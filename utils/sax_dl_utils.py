@@ -1,6 +1,5 @@
 import os
 import numpy as np
-import nibabel as nib
 import matplotlib.pyplot as plt
 
 import torch
@@ -9,9 +8,10 @@ from scipy.ndimage import zoom
 import time
 
 from .UNet import UNet
+import streamlit as st
 
 # ---- User-configurable paths ----
-MODEL_PATH = "models/example_2d_model.pth"
+MODEL_PATH = f"{st.session_state['clasp.MODELS_PATH']}/example_2d_model.pth"
 TARGET_SHAPE = (256, 256)
 NUM_CLASSES = 5
 BATCH_SIZE = 16

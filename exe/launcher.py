@@ -7,7 +7,7 @@ def bundled_path(*parts: str) -> str:
     return str(base.joinpath(*parts))
  
 def main():
-    app_path = bundled_path("imageCLASP_st.py")
+    app_path = bundled_path("app.py")
     port = 8501
     url = f"http://127.0.0.1:{port}"
  

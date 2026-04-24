@@ -1,7 +1,21 @@
-import os
+import os, sys
 import pandas as pd
 import requests
+import shutil
+
+base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+src = os.path.join(base_path, ".streamlit")
+dst = os.path.join(os.path.dirname(sys.executable), ".streamlit")
+
+if os.path.exists(src) and not os.path.exists(dst):
+    shutil.copytree(src, dst)
+
 import streamlit as st
+
+
+def resource_path(relative_path):
+    base_path = getattr(sys, "_MEIPASS", os.path.abspath("."))
+    return os.path.join(base_path, relative_path)
 
 ORTHANC = "http://localhost:8042"
 AUTH = ("orthanc", "orthanc")
@@ -15,11 +29,12 @@ if not os.path.exists('tables'):
 
 if 'clasp.DB_PATH' not in st.session_state:
     st.session_state['clasp.DB_PATH'] = "image_clasp_db.json"
-    st.session_state['clasp.REFERENCE_PATH'] = 'reference'
+    st.session_state['clasp.REFERENCE_PATH'] = resource_path('reference')
     st.session_state['clasp.OUT_PATH'] = 'tables'
     st.session_state['clasp.DEMOGRAPHICS_PATH'] = st.session_state['clasp.OUT_PATH'] + '/demographics.csv'
     st.session_state['clasp.EXAMS_PATH'] = st.session_state['clasp.OUT_PATH'] + '/exams.csv'
     st.session_state['clasp.MASK_SCALER'] = 500
+    st.session_state['clasp.MODELS_PATH'] = resource_path('models')
 
 
 pg = st.navigation([

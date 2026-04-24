@@ -59,9 +59,16 @@ def sync_orthanc_and_db():
 
         if study.patient_id in existing_patient_ids:
             continue
+        
+        patient_name = getattr(study, "patient_name", None)
 
-        patient_name = study.patient_name.split("^")
-        last_name, first_name = patient_name
+        if patient_name:
+            parts = patient_name.split("^")
+            last_name = parts[0] if len(parts) > 0 else ""
+            first_name = parts[1] if len(parts) > 1 else ""
+        else:
+            last_name = ""
+            first_name = ""
 
         new_rows.append({
             "patient_id": study.patient_id,

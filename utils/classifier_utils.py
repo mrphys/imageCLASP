@@ -4,9 +4,10 @@ import albumentations as A
 import torch.nn as nn
 import torch
 from .classifier import CNNClassifier
+import streamlit as st
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-CLASSIFIER_PATH = 'models/Classifier-22.pth'
+CLASSIFIER_PATH = f"{st.session_state['clasp.MODELS_PATH']}/Classifier-22.pth"
 model = CNNClassifier(num_classes=3)
 state_dict = torch.load(CLASSIFIER_PATH)
 model.load_state_dict(state_dict)

@@ -81,7 +81,7 @@ def upload_orthanc_file(file_path):
             data = r.json()
             series_id = data.get("ParentSeries")
 
-            series_resp = requests.get(f"{ORTHANC}/series/{series_id}")
+            series_resp = SESSION.get(f"{ORTHANC}/series/{series_id}")
             series_data = series_resp.json()
 
             study_id = series_data.get("ParentStudy")

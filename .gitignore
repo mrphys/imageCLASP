@@ -5,3 +5,7 @@ utils/cache
 utils/roundel
 *.npy
 tables_copy
+build
+dist
+*.exe
+*.spec

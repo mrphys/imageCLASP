@@ -131,13 +131,13 @@ def load_theme(
     button[kind="secondary"],
     button[kind="secondary"] * {{
         color: var(--secondary-color) !important;
+        background: none !important;
         font-size: var(--button-font) !important;
     }}
 
     button[kind="secondary"]:hover,
     button[kind="secondary"]:hover * {{
         color: var(--secondary-hover) !important;
-        background: none !important;
     }}
 
     button[kind="secondary"]:active,

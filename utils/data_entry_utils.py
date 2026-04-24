@@ -7,7 +7,7 @@ import time, json
 # ---------- Configuration ----------
 REFERENCE_PATH = st.session_state['clasp.REFERENCE_PATH'] 
 OUT_PATH = st.session_state['clasp.OUT_PATH']
-CONFIG_PATH = 'reference/data_entry_forms.json' #st.session_state['clasp.CONFIG_PATH']
+CONFIG_PATH = f"{st.session_state['clasp.REFERENCE_PATH']}/data_entry_forms.json" #st.session_state['clasp.CONFIG_PATH']
 
 def load_options(label: str, group_value: str | None = None) -> list[str]:
     path = f"{REFERENCE_PATH}/{label.lower()}_reference.csv"

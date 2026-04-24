@@ -1,0 +1,85 @@
+These are the steps I did in order:
+
+first make a requirements .txt (I used pip freeze)
+Then I made a venv for the app and installed the requirements and pyinstaller
+
+py -3.10 -m venv .venv
+.\.venv\Scripts\activate
+python -m pip install -U pip
+python -m pip install -r requirements.txt
+python -m pip install pyinstaller
+
+Then I used pyinstaller to create a local exe for the app (not the installer). The packages will often be missing so --collect all. For models and external files put them in a folder and --add-data. For windows use ';' for Linux/Max use ':' to map files.
+
+python -m PyInstaller --noconfirm --clean --onedir --console --name ImageCLASP \
+--collect-all matplotlib \
+--collect-all numpy \
+--collect-all cv2 \
+--collect-all openpyxl \
+--collect-all pandas \
+--collect-all pydicom \
+--collect-all requests \
+--collect-all imageio \
+--collect-all skimage \
+--collect-all scipy \
+--collect-all tinydb \
+--collect-all torch \
+--collect-all albumentations \
+--collect-all duckdb \
+--collect-all stqdm \
+--collect-all streamlit \
+--collect-all streamlit_drawable_canvas \
+--collect-all pylibjpeg \
+--collect-all pylibjpeg-libjpeg \
+--collect-all pylibjpeg-libjpeg \
+--collect-all pillow \
+--collect-all protobuf \
+--collect-all psutil \
+--hidden-import=matplotlib.animation \
+--add-data "app.py;." \
+--add-data ".streamlit;.streamlit" \
+--add-data "app_pages;app_pages" \
+--add-data "utils;utils" \
+--add-data "reference;reference" \
+--add-data "models;models" \
+exe\\launcher.py
+
+
+python -m PyInstaller --noconfirm --clean --onedir --console --name ImageCLASP \
+--collect-all numpy \
+--collect-all cv2 \
+--collect-all pandas \
+--collect-all pydicom \
+--collect-all requests \
+--collect-all streamlit \
+--collect-all streamlit-drawable-canvas \
+--collect-all protobuf \
+--hidden-import=matplotlib.animation \
+--collect-all imageio \
+--add-data "app.py;." \
+--add-data ".streamlit;.streamlit" \
+--add-data "app_pages;app_pages" \
+--add-data "utils;utils" \
+--add-data "reference;reference" \
+--add-data "models;models" \
+exe\\launcher.py
+
+
+
+
+python -m PyInstaller --noconfirm --clean --onedir --console --debug=imports --name ImageCLASP \
+--collect-all streamlit \
+--hidden-import=pydicom \
+
+--add-data "app.py;." \
+--add-data ".streamlit;.streamlit" \
+--add-data "app_pages;app_pages" \
+--add-data "utils;utils" \
+--add-data "reference;reference" \
+--add-data "models;models" \
+exe\\launcher.py
+
+Download vs_redist.x64.exe from the internet
+
+Then I use Inno setup complier (downloaded for windows), and compile the .iss.
+This creates your installer.exe

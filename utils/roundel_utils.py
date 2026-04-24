@@ -3,9 +3,13 @@ import pandas as pd
 from utils.pipeline import *
 import os
 from pathlib import Path
-import nibabel as nib
 import numpy as np
+from skimage.measure import find_contours
+import cv2
+import json
+from utils.reset_utils import *
 import imageio.v2 as imageio
+from datetime import datetime
 from PIL import Image, ImageSequence, ImageDraw, ImageFont
 import streamlit as st
 from streamlit_drawable_canvas import st_canvas
@@ -15,13 +19,6 @@ from scipy.ndimage import (
     binary_erosion,
     gaussian_filter
 ) 
-from skimage.measure import find_contours
-import cv2
-import json
-from datetime import datetime
-import copy
-from utils.reset_utils import *
-import shutil
 
 root_path = Path(__file__).resolve().parent
 data_path = str(root_path / "roundel/data")
@@ -184,15 +181,6 @@ def load_config(path) :
     with path.open("r") as f:
         return json.load(f)
 
-def save_mask(mask, save_path):
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    nib_mask = nib.Nifti1Image(mask, affine=np.eye(4), dtype='uint8')
-    nib.save(nib_mask, save_path)
-
-def save_image(image, save_path):
-    nib_image = nib.Nifti1Image(image, affine=np.eye(4), dtype='float32')
-    nib.save(nib_image, save_path)
-
 def normalize(image):
     image = (image - np.min(image))/(np.max(image) - np.min(image))
     return image
@@ -236,11 +224,6 @@ def cv_zoom(images, zoom, interpolation=cv2.INTER_CUBIC):
 
     return resized
 
-
-def load_nii(nii_path):
-    file = nib.load(nii_path)
-    data = file.get_fdata(caching='unchanged')
-    return data
 
 def cv_zoom_mask(
     mask,
