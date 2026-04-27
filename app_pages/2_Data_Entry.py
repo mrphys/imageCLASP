@@ -58,42 +58,6 @@ if "data_entry.initialized" not in st.session_state:
     init_patient_from_csv()
     st.session_state["data_entry.initialized"] = True
 
-# # ---------- Configure ----------
-# with col1:
-#     if configure_mode:
-#         if "accessed" not in st.session_state:
-#             st.session_state.accessed = False
-
-#         if not st.session_state.accessed:
-#             password = st.text_input("Enter a password", type="password")
-
-#             if password == "admin":
-#                 st.session_state.accessed = True
-#                 st.rerun()
-#         else:
-#             table = st.selectbox("Tables", ["Diagnoses", "Events", "Procedures"], index=None)
-
-
-# if st.session_state.accessed:
-#     df = pd.DataFrame(
-#         [{"Primary": [""], "Secondary": [""]}]
-#     )
-
-#     edited_df = st.data_editor(
-#         df,
-#         num_rows="dynamic",
-#         use_container_width=True,
-#         column_config={
-#             "Primary": st.column_config.ListColumn(
-#                 "Primary Diagnoses",
-#             ),
-#             "Secondary": st.column_config.ListColumn(
-#                 "Secondary Diagnoses",
-#             ),
-#         },
-#     )
-
-
 if not configure_mode:
     tabs = st.tabs(CLINICAL_ENTRIES)
     # --- Tab 1: Demographics ---

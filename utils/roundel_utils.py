@@ -20,29 +20,23 @@ from scipy.ndimage import (
     gaussian_filter
 ) 
 
-root_path = Path(__file__).resolve().parent
-data_path = str(root_path / "roundel/data")
-results_path = str(root_path / "roundel/results")
-models_path = str(root_path / "roundel/models")
+root_path = Path(st.session_state["clasp.ROUNDEL_PATH"])
 
-blank_gif_path = f'{results_path}/temp/blank'
-full_edited_gif_path = f'{results_path}/temp/edited'
-preprocessed_gif_path = f'{results_path}/temp/preprocessed'
-edv_esv_gif_path = f'{results_path}/temp/edv_esv'
-edited_gif_path = f'{results_path}/temp/edited_edv_esv'
-raw_curve_path = f'{results_path}/temp/raw_metrics.png'
-edited_curve_path = f'{results_path}/temp/edited_metrics.png'
-dicom_mask_path = f'{results_path}/masks/dicoms/'
-nifti_mask_path = f'{results_path}/masks/nifti/'
+data_path = root_path / "data"
+results_path = root_path / "results"
+models_path = root_path / "models"
+cache_dir = root_path / "cache"
 
-cache_dir = str(root_path / "roundel/cache")
-final_dir = f'{results_path}/results.zip'
+blank_gif_path = results_path / "temp" / "blank"
+edv_esv_gif_path = results_path / "temp" / "edv_esv"
+edited_gif_path = results_path / "temp" / "edited_edv_esv"
 
-os.makedirs(f'{data_path}', exist_ok=True)
-os.makedirs(f'{results_path}/temp', exist_ok=True)
-os.makedirs(f'{results_path}/gifs', exist_ok=True)
-os.makedirs(f'{results_path}/edited_sax_df', exist_ok=True)
-os.makedirs(cache_dir, exist_ok=True)
+# directory creation
+(data_path).mkdir(parents=True, exist_ok=True)
+(results_path / "temp").mkdir(parents=True, exist_ok=True)
+(results_path / "gifs").mkdir(parents=True, exist_ok=True)
+(results_path / "edited_sax_df").mkdir(parents=True, exist_ok=True)
+cache_dir.mkdir(parents=True, exist_ok=True)
 
 GIF_W = 150
 DISPLAY_W = 400
@@ -422,7 +416,7 @@ def make_video(image, mask, save_file, ventricle = 'all', mask_frames = 'all',sc
     else:
         fps = np.clip(len(mask_frames) / 2, 8, 15)
 
-    save_file = save_file.replace('.gif','')
+    save_file = str(save_file).replace('.gif','')
     imageio.mimsave(f'{save_file}.gif', frames, fps=fps, loop=0)
 
 
@@ -546,7 +540,7 @@ def confirm_selection(lv_dia_idx, lv_sys_idx,rv_dia_idx, rv_sys_idx):
         st.session_state['roundel.preprocessed']['smooth_image'],
         st.session_state['roundel.edited_mask_lv'],
         mask_frames = [lv_dia_idx, lv_sys_idx],
-        save_file=f'{edited_gif_path}_lv',
+        save_file=f'{str(edited_gif_path)}_lv',
 
     )
 
@@ -554,15 +548,15 @@ def confirm_selection(lv_dia_idx, lv_sys_idx,rv_dia_idx, rv_sys_idx):
         st.session_state['roundel.preprocessed']['smooth_image'],
         st.session_state['roundel.edited_mask_rv'],
         mask_frames = [rv_dia_idx, rv_sys_idx],
-        save_file=f'{edited_gif_path}_rv',
+        save_file=f'{str(edited_gif_path)}_rv',
         ventricle = 'rv'
     )
 
-    gif = Image.open(f'{edited_gif_path}_lv.gif')
+    gif = Image.open(f'{str(edited_gif_path)}_lv.gif')
     lv_frames = [frame.copy() for frame in ImageSequence.Iterator(gif)]
     st.session_state['roundel.lv_frames'] = lv_frames
 
-    gif = Image.open(f'{edited_gif_path}_rv.gif')
+    gif = Image.open(f'{str(edited_gif_path)}_rv.gif')
     rv_frames = [frame.copy() for frame in ImageSequence.Iterator(gif)]
     st.session_state['roundel.rv_frames'] = rv_frames
 
@@ -771,11 +765,14 @@ def initialize_app(study):
 
     smoothed_image = cv_zoom(preprocessed_image, zoom=zoom)
 
-    st.session_state["roundel.cache_config_path"] = (
-        f"{cache_dir}/config___{st.session_state['roundel.orthanc_study_id']}.json"
+    orthanc_study_id = st.session_state["roundel.orthanc_study_id"]
+
+    st.session_state["roundel.cache_config_path"] = str(
+        cache_dir / f"config___{orthanc_study_id}.json"
     )
-    st.session_state["roundel.cache_mask_path"] = (
-        f"{cache_dir}/masks___{st.session_state['roundel.orthanc_study_id']}.npy"
+
+    st.session_state["roundel.cache_mask_path"] = str(
+        cache_dir / f"masks___{orthanc_study_id}.npy"
     )
 
     step(3/5, "Loading Roundel")
@@ -812,7 +809,8 @@ def initialize_app(study):
 
     step(5/5, "Loading Roundel")
 
-    gif = Image.open(f"{edv_esv_gif_path}.gif")
+    gif = Image.open(f"{str(edv_esv_gif_path)}.gif")
+
 
     st.session_state['roundel.preprocessed'] = {
         "image": preprocessed_image,
@@ -1145,8 +1143,8 @@ def mask_editor_view():
                 stroke_color=stroke_color,
                 background_image=get_overlay(image_slice, mask_slice, H, W, N, OVERLAY_COLORS, ventricle),
                 update_streamlit=True,
-                # height = H*DISPLAY_W/W,
-                # width=DISPLAY_W,
+                height = H*DISPLAY_W/W,
+                width=DISPLAY_W,
                 drawing_mode='freedraw',
                 key=st.session_state['roundel.canvas']['canvas_key']+ ventricle
             )
@@ -1229,12 +1227,12 @@ def mask_editor_view():
             make_video(
                 image,
                 st.session_state[f'roundel.edited_mask_{ventricle}'],
-                save_file=f'{edited_gif_path}_{ventricle}',
+                save_file=f'{str(edited_gif_path)}_{ventricle}',
                 mask_frames = [dia_idx, sys_idx],
                 ventricle = ventricle
             )
 
-            gif = Image.open(f'{edited_gif_path}_{ventricle}.gif')
+            gif = Image.open(f'{str(edited_gif_path)}_{ventricle}.gif')
             st.session_state[f'roundel.{ventricle}_frames'] = [frame.copy() for frame in ImageSequence.Iterator(gif)]
             st.session_state['roundel.edit_made'] = False
 

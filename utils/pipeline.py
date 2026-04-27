@@ -1,11 +1,9 @@
 from utils.orthanc_utils import *
 from utils.db_utils import *
-from utils.plot_utils import *
 from utils.mri_sorter import MRI_Sorter
 from utils.sax_dl_utils import *
 from scipy.ndimage import zoom
 import copy
-from stqdm import stqdm
 
 DB_PATH = st.session_state['clasp.DB_PATH'] 
 DEMOGRAPHICS_PATH = st.session_state['clasp.DEMOGRAPHICS_PATH']

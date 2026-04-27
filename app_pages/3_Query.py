@@ -2,10 +2,14 @@ import os
 import glob
 import streamlit as st
 import duckdb
+from pathlib import Path
 
 from utils.pipeline import *
 from utils.theme_utils import *
 from utils.reset_utils import *
+import streamlit as st
+
+OUT_PATH = st.session_state["clasp.OUT_PATH"] 
 
 reset_app("data_entry")
 reset_app("roundel")
@@ -24,10 +28,9 @@ load_theme(
 
 con = duckdb.connect()
 
-OUT_PATH = "tables"
 
 files = sorted(
-    glob.glob(f"{OUT_PATH}/*.csv"),
+    glob.glob(str(Path(OUT_PATH) / "*.csv")),
     key=lambda f: (0 if "exams" in f.lower() else 1 if "demographics" in f.lower() else 2, f),
 )
 

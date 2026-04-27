@@ -4,13 +4,15 @@ from datetime import date
 import pandas as pd
 import streamlit as st
 import time, json
+from pathlib import Path
+
 # ---------- Configuration ----------
 REFERENCE_PATH = st.session_state['clasp.REFERENCE_PATH'] 
 OUT_PATH = st.session_state['clasp.OUT_PATH']
-CONFIG_PATH = f"{st.session_state['clasp.REFERENCE_PATH']}/data_entry_forms.json" #st.session_state['clasp.CONFIG_PATH']
+CONFIG_PATH = st.session_state["clasp.REFERENCE_PATH"] / "data_entry_forms.json"
 
 def load_options(label: str, group_value: str | None = None) -> list[str]:
-    path = f"{REFERENCE_PATH}/{label.lower()}_reference.csv"
+    path = REFERENCE_PATH / f"{label.lower()}_reference.csv"
     df = pd.read_csv(path)
     value_col = 'value'
     group_col= 'type'
@@ -214,7 +216,7 @@ def save_data_entry():
     for entry in CLINICAL_ENTRIES:
         entry = entry.lower()
         if entry == 'demographics':
-            upsert_demographics_csv(demographics_df, f'{OUT_PATH}/{entry.lower()}.csv')
+            upsert_demographics_csv(demographics_df, OUT_PATH /f'{entry.lower()}.csv')
         else:
             if len(st.session_state[f'data_entry.current_{entry.lower()}'])>0:
                 df = pd.DataFrame(st.session_state[f'data_entry.current_{entry.lower()}'])
@@ -225,7 +227,7 @@ def save_data_entry():
                 else:
                     df = df.groupby(["patient_id", f"{entry}_date"]).last().reset_index()
 
-                append_csv(df, f'{OUT_PATH}/{entry.lower()}.csv')
+                append_csv(df, OUT_PATH /f'{entry.lower()}.csv')
 
 
 def choose_entry_format(option_input, label, form_name, value_field):

@@ -4,8 +4,8 @@ from utils.pipeline import *
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import subprocess
-import sys
-import glob
+import sys, os, glob
+import pandas as pd
 from utils.theme_utils import *
 from utils.reset_utils import *
 
@@ -23,11 +23,6 @@ if "dashboard.initialised" not in st.session_state:
     st.session_state['dashboard.initialised'] = True
 
 def file_browser():
-    import os
-    import glob
-    import pandas as pd
-    import streamlit as st
-
     base_path = os.path.expanduser("~")
 
     @st.cache_data(show_spinner=False)
@@ -129,12 +124,33 @@ def file_browser():
     st.session_state["selected_folders"] = selected
 
     col1, col2 = st.columns(2)
+    folder_message = "Select All" if len(selected) == 0 else "Select Chosen Folders"
 
     with col1:
-        if st.button("Confirm folders", use_container_width=True, type = 'primary'):
+        if st.button(folder_message, use_container_width=True, type="primary"):
             st.session_state["dashboard.upload_path"] = current_path
-            st.session_state["dashboard.selected_folders"] = selected
-            st.rerun()
+
+            if len(selected) == 0:
+                st.session_state["dashboard.awaiting_select_all"] = True
+            else:
+                st.session_state["dashboard.selected_folders"] = selected
+                st.session_state["dashboard.awaiting_select_all"] = False
+                st.rerun()
+
+    if st.session_state.get("dashboard.awaiting_select_all", False):
+        st.warning("Select all folders in this directory?")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Yes, select all", use_container_width=True, type="primary"):
+                st.session_state["dashboard.selected_folders"] = set(df["path"].tolist())
+                st.session_state["dashboard.awaiting_select_all"] = False
+                st.rerun()
+
+        with c2:
+            if st.button("No", use_container_width=True):
+                st.session_state["dashboard.awaiting_select_all"] = False
+                st.rerun()
 
     with col2:
         if st.button("Go ➡️", use_container_width=True):

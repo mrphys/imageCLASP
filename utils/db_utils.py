@@ -3,7 +3,8 @@ import pandas as pd
 import numpy as np
 import os
 import glob
-DB_PATH = "./image_clasp_db.json"
+import streamlit as st
+DB_PATH = st.session_state['clasp.DB_PATH']
 
 def fetch_db_studies():
     db = TinyDB(DB_PATH)

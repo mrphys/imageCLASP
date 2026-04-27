@@ -65,7 +65,7 @@ with col1:
 if 'roundel.initialized' not in st.session_state:
     initialize_app(study)
 
-view_options = ["EDV/ESV Finder", "Mask Editor", "Final Result"]
+view_options = ["EDV/ESV Finder 🔍", "Mask Editor 📝", "Final Result ✅"]
 
 # repair old stored values
 if "roundel.view" not in st.session_state:

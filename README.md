@@ -1,6 +1,6 @@
 python3.13 -m venv clasp
 
-source activate clasp
+source activate clasp (source clasp/Scripts/activate)
 
 pip install --upgrade pip
 pip install -r requirements.txt

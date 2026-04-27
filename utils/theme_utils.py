@@ -2,6 +2,25 @@
 
 import streamlit as st
 
+def st_header(title="CLASP dashboard"):
+    st.markdown(f"""
+    <style>
+    .block-container {{
+        padding-top: 2rem
+    }}
+
+    .custom-title {{
+        text-align: center;
+        margin-bottom: 2rem;
+        font-size: 40px;
+        font-family: Arial, sans-serif;
+                
+    }}
+    </style>
+
+    <h1 class="custom-title">{title}</h1>
+    """, unsafe_allow_html=True)
+
 def load_theme(
     secondary="#A94442",
     secondary_hover="#7A2F2F",
