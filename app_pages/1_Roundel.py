@@ -92,7 +92,7 @@ st.divider()
 # --------------------------------------------------------------
 # EDV/ESV Finder 
 # --------------------------------------------------------------
-if view == "EDV/ESV Finder":
+if view == "EDV/ESV Finder 🔍":
     edv_esv_view()
 
 
@@ -100,12 +100,12 @@ if view == "EDV/ESV Finder":
 # Mask Editor 
 # --------------------------------------------------------------
 
-if view == "Mask Editor":
+if view == "Mask Editor 📝":
     mask_editor_view()
 
 
 # --------------------------------------------------------------
 # Final Result
 # --------------------------------------------------------------
-if view == "Final Result":
+if view == "Final Result ✅":
     final_result_view()

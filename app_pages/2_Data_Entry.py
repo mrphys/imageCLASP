@@ -22,7 +22,7 @@ demo_df = load_demographics()
 num_remaining_patients = len(demo_df)
 
 names = [
-    f"{row["first_name"]} {row["last_name"]} | {row["patient_id"]}"
+    f"{row['first_name']} {row['last_name']} | {row['patient_id']}"
     for _, row in demo_df.iterrows()
 ]
 

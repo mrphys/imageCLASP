@@ -121,36 +121,19 @@ def file_browser():
     )
 
     selected = set(edited[edited["select"]]["path"].tolist())
-    st.session_state["selected_folders"] = selected
-
     col1, col2 = st.columns(2)
     folder_message = "Select All" if len(selected) == 0 else "Select Chosen Folders"
 
     with col1:
         if st.button(folder_message, use_container_width=True, type="primary"):
             st.session_state["dashboard.upload_path"] = current_path
-
             if len(selected) == 0:
-                st.session_state["dashboard.awaiting_select_all"] = True
+                st.session_state["dashboard.selected_folders"] = set(df["path"].tolist())
+                st.rerun()
             else:
                 st.session_state["dashboard.selected_folders"] = selected
-                st.session_state["dashboard.awaiting_select_all"] = False
                 st.rerun()
 
-    if st.session_state.get("dashboard.awaiting_select_all", False):
-        st.warning("Select all folders in this directory?")
-
-        c1, c2 = st.columns(2)
-        with c1:
-            if st.button("Yes, select all", use_container_width=True, type="primary"):
-                st.session_state["dashboard.selected_folders"] = set(df["path"].tolist())
-                st.session_state["dashboard.awaiting_select_all"] = False
-                st.rerun()
-
-        with c2:
-            if st.button("No", use_container_width=True):
-                st.session_state["dashboard.awaiting_select_all"] = False
-                st.rerun()
 
     with col2:
         if st.button("Go ➡️", use_container_width=True):
@@ -185,55 +168,57 @@ def get_max_workers():
     return min(32, cpu + 4)
 
 
-def upload_root_folder(root_folder: str):
-    root = Path(root_folder)
-    max_workers = get_max_workers()
-
-    if not root.exists():
-        raise FileNotFoundError(f"Folder does not exist: {root_folder}")
-
-    if not root.is_dir():
-        raise NotADirectoryError(f"Not a folder: {root_folder}")
-
-    def iter_files():
-        for p in root.rglob("*"):
-            if p.is_file():
-                yield p
-
+def upload_folders(selected_folders: str):
     uploaded = 0
     failed = 0
     total = 0
     series_list = []
     study_list = []
 
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = set()
+    for root_folder in selected_folders:
+        root = Path(root_folder)
+        max_workers = get_max_workers()
 
-        for file_path in iter_files():
-            futures.add(executor.submit(upload_orthanc_file, file_path))
-            total += 1
+        if not root.exists():
+            raise FileNotFoundError(f"Folder does not exist: {root_folder}")
 
-        progress_bar = st.progress(0, f"## **Uploading Files:**")
+        if not root.is_dir():
+            raise NotADirectoryError(f"Not a folder: {root_folder}")
 
-        completed = 0
+        def iter_files():
+            for p in root.rglob("*"):
+                if p.is_file():
+                    yield p
 
-        for future in as_completed(futures):
-            try:
-                series_id, study_id = future.result()
-                if series_id is not None:
-                    series_list.append(series_id)
-                    study_list.append(study_id)
-                    uploaded += 1
-                else:
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = set()
+
+            for file_path in iter_files():
+                futures.add(executor.submit(upload_orthanc_file, file_path))
+                total += 1
+
+            progress_bar = st.progress(0, f"## **Uploading Files:**")
+
+            completed = 0
+
+            for future in as_completed(futures):
+                try:
+                    series_id, study_id = future.result()
+                    if series_id is not None:
+                        series_list.append(series_id)
+                        study_list.append(study_id)
+                        uploaded += 1
+                    else:
+                        failed += 1
+                except Exception:
                     failed += 1
-            except Exception:
-                failed += 1
 
-            completed += 1
-            progress_bar.progress(
-                completed / total, 
-                f"## **Uploading Files:** {completed}/{total} ({completed/total:.1%})"
-            )
+                completed += 1
+                progress_bar.progress(
+                    completed / total, 
+                    f"## **Uploading Files:** {completed}/{total} ({completed/total:.1%})"
+                )
 
     num_series = len(set(series_list))
     num_studies = len(set(study_list))
@@ -308,21 +293,17 @@ with pn2:
         selected_folders = file_browser()
         if selected_folders:
             st.session_state["dashboard.selected_folders"] = set()
-            for folder in selected_folders:
-                try:
-                    total, failed, num_series, num_studies = upload_root_folder(folder)
+            total, failed, num_series, num_studies = upload_folders(selected_folders)
 
-                    st.session_state["dashboard.upload_summary"] = {
-                        "Number of Studies": num_studies,
-                        "Number of Series": num_series,
-                        "Total Files": total,
-                        "Failed Files": failed
-                    }
-                    st.session_state["dashboard.show_upload_button"] = True
-                    st.session_state["dashboard.open_file_browser"] = False
+            st.session_state["dashboard.upload_summary"] = {
+                "Number of Studies": num_studies,
+                "Number of Series": num_series,
+                "Total Files": total,
+                "Failed Files": failed
+            }
+            st.session_state["dashboard.show_upload_button"] = True
+            st.session_state["dashboard.open_file_browser"] = False
 
-                except Exception as e:
-                    st.error(str(e))
 
     if st.session_state['dashboard.upload_summary']:
         summary = st.session_state['dashboard.upload_summary']
