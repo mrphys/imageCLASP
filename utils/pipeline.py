@@ -83,6 +83,37 @@ def sync_orthanc_and_db():
         demo_df = pd.concat([demo_df, pd.DataFrame(new_rows)], ignore_index=True)
         demo_df.to_csv(DEMOGRAPHICS_PATH, index=False)
 
+    ####
+    print(f"DEBUG - patient_name: {study.patient_name}")
+        try:
+            patient_name = study.patient_name.split("^")
+        except Exception:
+            anon = _random_anon_name()
+            patient_name = anon.split("^")
+            print(f"Warning: No patient name for scan. Assigning random name: {anon}")
+        last_name = patient_name[0] if len(patient_name) > 0 else ""
+        first_name = patient_name[1] if len(patient_name) > 1 else ""
+
+        print(f"DEBUG - patient_id: {study.patient_id}")
+
+        new_rows.append({
+            "patient_id": study.patient_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "sex": study.patient_sex if study.patient_sex else "",
+            "dob": pd.to_datetime(study.patient_dob, format="%Y%m%d").strftime("%Y-%m-%d") if study.patient_dob else "",
+            "data_entered": False
+        })
+
+        existing_patient_ids.add(study.patient_id)
+
+    if new_rows:
+        demo_df = pd.concat([demo_df, pd.DataFrame(new_rows)], ignore_index=True)
+        print(f"DEBUG - demo_df: {demo_df}")
+        os.makedirs(os.path.dirname(DEMOGRAPHICS_PATH), exist_ok=True)
+        demo_df.to_csv(DEMOGRAPHICS_PATH, index=False)
+    #####
+
     db.close()
 
 def update_study(db, study):

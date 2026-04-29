@@ -11,3 +11,7 @@ dist
 *.exe
 *.spec
 .venv
+models/corrector_unet_model.pth
+models/initial_unet_model.pth
+.claude
+CLAUDE.md
