@@ -11,7 +11,7 @@ python -m pip install pyinstaller
 
 Then I used pyinstaller to create a local exe for the app (not the installer). The packages will often be missing so --collect all. For models and external files put them in a folder and --add-data. For windows use ';' for Linux/Max use ':' to map files.
 
-python -m PyInstaller --noconfirm --clean --onedir --windowed --name ImageCLASP \
+python -m PyInstaller --noconfirm --clean --onedir --name ImageCLASP \
 --collect-all matplotlib \
 --collect-all numpy \
 --collect-all cv2 \
