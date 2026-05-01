@@ -1,0 +1,2 @@
+patient_id,orthanc_study_id,exam_date,lv_edv,lv_esv,lv_sv,lv_ef,rv_mass,rv_edv,rv_esv,rv_sv,rv_ef
+23456781,627d8707-9ec50a40-12b3be39-12b6cb9f-33bcb2cd,2025-12-31,134.15,62.11,72.05,53.7,19.86,103.49,54.46,49.02,47.4
