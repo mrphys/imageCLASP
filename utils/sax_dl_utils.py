@@ -11,7 +11,7 @@ from .UNet import UNet
 import streamlit as st
 
 # ---- User-configurable paths ----
-MODEL_PATH = f"{st.session_state['clasp.MODELS_PATH']}/example_2d_model.pth"
+MODEL_PATH = st.session_state['clasp.MODELS_PATH'] / "example_2d_model.pth"
 TARGET_SHAPE = (256, 256)
 NUM_CLASSES = 5
 BATCH_SIZE = 16
