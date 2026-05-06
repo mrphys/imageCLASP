@@ -7,6 +7,7 @@ import numpy as np
 from skimage.measure import find_contours
 import cv2
 import json
+import torch
 from utils.reset_utils import *
 import imageio.v2 as imageio
 from datetime import datetime
@@ -17,8 +18,9 @@ from scipy.ndimage import (
     binary_fill_holes,
     binary_dilation,
     binary_erosion,
-    gaussian_filter
-) 
+    gaussian_filter,
+    zoom,
+)
 
 root_path = Path(st.session_state["clasp.ROUNDEL_PATH"])
 
@@ -30,6 +32,7 @@ cache_dir = root_path / "cache"
 blank_gif_path = results_path / "temp" / "blank"
 edv_esv_gif_path = results_path / "temp" / "edv_esv"
 edited_gif_path = results_path / "temp" / "edited_edv_esv"
+preview_gif_path = results_path / "temp" / "preview"
 
 # directory creation
 (data_path).mkdir(parents=True, exist_ok=True)
@@ -90,7 +93,6 @@ BRUSH_LABELS = dict(
         key=lambda item: 0 if 'myocardium' in item[1].lower() else 1
     )
 )
-
 
 def restart_app():
     prev = st.session_state["roundel.prev_study_id"]
@@ -177,6 +179,13 @@ def load_config(path) :
 
 def normalize(image):
     image = (image - np.min(image))/(np.max(image) - np.min(image))
+    return image
+
+def z_normalise_image(image):
+    mean = np.mean(image)
+    std = np.std(image)
+    image -= mean
+    image /= (max(std, 1e-8))
     return image
 
 def merge_masks(lv_mask, rv_mask):
@@ -418,6 +427,170 @@ def make_video(image, mask, save_file, ventricle = 'all', mask_frames = 'all',sc
 
     save_file = str(save_file).replace('.gif','')
     imageio.mimsave(f'{save_file}.gif', frames, fps=fps, loop=0)
+
+
+def save_corrector_input_gif(image_input, save_path, fps=4):
+    """
+    image_input: (H, W, D, C) — channel 0 = target image, channel 1 = prior image, channels 2+ = prior mask classes
+    Saves a GIF where each frame is one depth slice showing target, prior, individual masks, and overlays.
+    """
+    import io as _io
+
+    _, _, D, C = image_input.shape
+    num_masks = C - 2
+    n_cols = num_masks + 4  # target, prior, each mask, overlay on target, overlay on prior
+
+    mask_labels = ['LV Pool', 'RV Pool', 'LV Myo', 'RV Myo']
+    mask_colors = [
+        (1.0, 0.04, 0.04),   # LV pool - red
+        (1.0, 0.75, 0.04),   # RV pool - yellow
+        (0.0, 1.0, 1.0),     # LV myo - cyan
+        (0.0, 0.78, 0.04),   # RV myo - green
+    ]
+
+    frames = []
+    for d in range(D):
+        fig, axes = plt.subplots(1, n_cols, figsize=(3 * n_cols, 3.5))
+        fig.patch.set_facecolor('black')
+        for ax in np.array(axes).flatten():
+            ax.axis('off')
+            ax.patch.set_facecolor('black')
+
+        target = image_input[:, :, d, 0]
+        prior  = image_input[:, :, d, 1]
+
+        axes[0].imshow(target, cmap='gray')
+        axes[0].set_title('Target', color='white', fontsize=8, pad=2)
+
+        axes[1].imshow(prior, cmap='gray')
+        axes[1].set_title('Prior', color='white', fontsize=8, pad=2)
+
+        for m in range(num_masks):
+            axes[2 + m].imshow(image_input[:, :, d, 2 + m], cmap='gray', vmin=0, vmax=1)
+            axes[2 + m].set_title(mask_labels[m] if m < len(mask_labels) else f'Mask {m+1}',
+                                   color='white', fontsize=8, pad=2)
+
+        def _overlay(ax, bg, title):
+            ax.imshow(bg, cmap='gray')
+            for m in range(num_masks):
+                mask = image_input[:, :, d, 2 + m]
+                rgba = np.zeros((*mask.shape, 4), dtype=np.float32)
+                rgba[..., :3] = mask_colors[m % len(mask_colors)]
+                rgba[..., 3] = mask * 0.5
+                ax.imshow(rgba)
+            ax.set_title(title, color='white', fontsize=8, pad=2)
+
+        _overlay(axes[-2], target, 'Target + Masks')
+        _overlay(axes[-1], prior,  'Prior + Masks')
+
+        fig.suptitle(f'Slice {d + 1}/{D}', color='white', fontsize=9, y=1.01)
+        plt.tight_layout()
+
+        buf = _io.BytesIO()
+        fig.savefig(buf, format='png', facecolor='black', bbox_inches='tight', dpi=100)
+        buf.seek(0)
+        frames.append(imageio.imread(buf))
+        plt.close(fig)
+
+    os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+    imageio.mimsave(save_path, frames, fps=fps)
+
+
+def run_corrector_unet(raw_image, prior_image_raw, prior_mask_raw_onehot, native_spacing):
+    """
+    raw_image:              (H_raw, W_raw, D, T) – full time series in native space
+    prior_image_raw:        (H_raw, W_raw, D)    – reference frame in native space
+    prior_mask_raw_onehot:  (H_raw, W_raw, D, N) – one-hot prior mask in native space
+    native_spacing:         scalar pixel spacing (isotropic assumed)
+    Returns:                (H_smooth, W_smooth, D, T, N) corrected mask in smooth space
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+    N = prior_mask_raw_onehot.shape[-1]
+    subpixel_res = st.session_state['roundel.subpixel_resolution']
+    x_min, y_min, x_max, y_max = st.session_state['roundel.preprocessed']['crop_box']
+    D, T = raw_image.shape[2], raw_image.shape[3]
+    H_smooth = (y_max - y_min) * subpixel_res
+    W_smooth = (x_max - x_min) * subpixel_res
+    ns = [native_spacing, native_spacing]
+
+    if 'roundel.corrector_model' not in st.session_state:
+        m = UNet(
+            in_channels=6, out_channels=5,
+            filters=[32, 64, 128, 256, 320, 320, 320],
+            kernel_sizes=[(1,3,3),(1,3,3),(3,3,3),(3,3,3),(3,3,3),(3,3,3),(3,3,3)],
+            strides=[(1,1,1),(1,2,2),(1,2,2),(2,2,2),(1,2,2),(1,2,2),(1,2,2)],
+            conv_blocks_per_level=2,
+            rank=3,
+            activation='leaky_relu',
+            norm_type='InstanceNorm',
+            final_activation='softmax',
+            deep_supervision=True,
+            num_ds_outputs=4,
+        )
+        corrector_path = str(Path(st.session_state['clasp.MODELS_PATH']) / 'corrector_unet_model.pth')
+        m.load_state_dict(torch.load(corrector_path, map_location=device))
+        st.session_state['roundel.corrector_model'] = m.eval().to(device)
+
+    corrector_model = st.session_state['roundel.corrector_model']
+
+    # Preprocess the reference prior image once (static across timesteps)
+    prior_resampled = resample_volume(prior_image_raw.astype(np.float32), ns)
+    prior_cropped, _ = crop_pad_image_only(prior_resampled)
+    prior_norm = z_normalise_image(prior_cropped.copy())
+
+    # Resample prior mask: native → target spacing (nearest-neighbour), then crop/pad to 256×256
+    zoom_factor = native_spacing / TARGET_SPACING
+    prior_labels = np.argmax(prior_mask_raw_onehot, axis=-1).astype(np.uint8)
+    prior_labels_resampled = zoom(prior_labels.astype(np.float32), (zoom_factor, zoom_factor, 1.0), order=0).astype(np.uint8)
+    prior_labels_cropped, _ = crop_pad_image_only(prior_labels_resampled)
+    prior_mask_no_bg = np.eye(N, dtype=np.uint8)[prior_labels_cropped][:, :, :, 1:]  # (256, 256, D, N-1)
+
+    mask_out = np.zeros((H_smooth, W_smooth, D, T, N), dtype=np.uint8)
+    progress = st.progress(0, "Running Corrector Model... frame:")
+
+    for t in range(T):
+        image_t = raw_image[:, :, :, t].astype(np.float32)
+        image_resampled = resample_volume(image_t, ns)
+        image_cropped, meta = crop_pad_image_only(image_resampled)
+        image_norm = z_normalise_image(image_cropped.copy())
+
+        image_input = np.concatenate(
+            [image_norm[..., np.newaxis], prior_norm[..., np.newaxis], prior_mask_no_bg],
+            axis=-1,
+        )  # (256, 256, D, 6)
+
+        # Optional, save plot of the input to the corrector model
+        # if t ==10:
+        #     gif_path = str(PLOTS_PATH / f"{st.session_state['roundel.orthanc_study_id']}_corrector_input_timestep10.gif")
+        #     save_corrector_input_gif(image_input, gif_path)
+
+        X = image_input.transpose(3, 2, 0, 1)[np.newaxis, ...].astype(np.float32)  # (1, 6, D, 256, 256)
+
+        with torch.no_grad():
+            prob_map, _ = monai_sliding_window_inference_3d(
+                corrector_model, X,
+                patch_size=(256, 256, 10),
+                overlap=0.5,
+                apply_softmax=False,
+                out_channels=5,
+                # tta=device.type != 'cpu',
+                tta=False,
+                deep_supervision=True,
+            )
+
+        pred = np.argmax(prob_map, axis=-1).astype(np.uint8)       # (256, 256, D)
+        pred = reverse_crop_pad(pred, meta)                          # (H_resampled, W_resampled, D)
+        pred = resample_mask(pred, ns)                               # (H_raw, W_raw, D)
+        pred_crop = pred[y_min:y_max, x_min:x_max, :]               # (H_crop, W_crop, D)
+        pred_smooth = zoom(                                          # (H_smooth, W_smooth, D)
+            pred_crop.astype(np.float32), [subpixel_res, subpixel_res, 1], order=0
+        ).astype(np.uint8)
+        mask_out[:, :, :, t, :] = np.eye(N, dtype=np.uint8)[pred_smooth]
+
+        progress.progress((t + 1) / T, f"Running Corrector Model... {t+1}/{T}")
+
+    progress.empty()
+    return mask_out
 
 
 def calculate_sax_metrics(mask, blood_pool_idx, myo_idx, dia_idx, sys_idx):
@@ -807,6 +980,9 @@ def initialize_app(study):
         save_file=blank_gif_path,
     )
 
+    make_video(smoothed_image, smoothed_mask, save_file=str(preview_gif_path))
+    st.session_state['roundel.preview_gif_path'] = f'{str(preview_gif_path)}.gif'
+
     step(5/5, "Loading Roundel")
 
     gif = Image.open(f"{str(edv_esv_gif_path)}.gif")
@@ -851,7 +1027,7 @@ def initialize_app(study):
     st.session_state['roundel.cached'] = cached
     st.session_state['roundel.saved'] = False
     st.session_state['roundel.initialized'] = True
-    st.session_state["roundel.view"] = 'EDV/ESV Finder 🔍'
+    st.session_state["roundel.view"] = 'Preview Segmentation 👁️'
     st.session_state['roundel.edv_esv_selected'] = {"lv_dia_idx": None, "lv_sys_idx": None, "rv_dia_idx": None, "rv_sys_idx": None,"confirmed": False}
     progress_bar.empty()
 
@@ -913,6 +1089,18 @@ def edv_esv_view():
     else:
         st.success("EDV | ESV Confirmed! 🔍")
 
+    st.write('')
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("EDV/ESV Only", use_container_width=True, disabled=not disabled_flag):
+            st.session_state["roundel.mask_editor_mode"] = "edv_esv_only"
+            st.session_state["roundel.view"] = "Mask Editor 📝"
+            st.rerun()
+    with col2:
+        if st.button("All frames", use_container_width=True, disabled=not disabled_flag):
+            st.session_state["roundel.mask_editor_mode"] = "all_frames"
+            st.session_state["roundel.view"] = "Mask Editor 📝"
+            st.rerun()
 
 
 def slice_navigation(D):
@@ -1045,6 +1233,175 @@ def select_brush(N, ventricle):
     stroke_width = stroke_width_map[stroke_width_sel]
     return channel, action, stroke_width
 
+
+
+def preview_segmentation_view():
+    if not st.session_state.get('roundel.initialized'):
+        st.info("Run segmentation first to preview the result.")
+        return
+
+    st.header("Preview Segmentation")
+    _, col2, _ = st.columns([1, 2, 1])
+    with col2:
+        st.image(st.session_state['roundel.preview_gif_path'], use_container_width=True)
+
+
+def corrector_model_view():
+    if not st.session_state.get('roundel.initialized'):
+        st.info("Run segmentation first.")
+        return
+
+    smooth_mask = st.session_state['roundel.preprocessed']['smooth_mask']
+    if ('roundel.corrected_prior_mask' not in st.session_state or
+            st.session_state['roundel.corrected_prior_mask'].shape != smooth_mask.shape):
+        st.session_state['roundel.corrected_prior_mask'] = smooth_mask.copy()
+
+    H, W, D, T, N = [st.session_state['roundel.preprocessed'][k] for k in ["H", "W", "D", "T", "N"]]
+    image = st.session_state['roundel.preprocessed']['smooth_image']
+    subpixel_res = st.session_state['roundel.subpixel_resolution']
+
+    col1, col2, col3 = st.columns([1, 1.5, 1.5])
+
+    with col1:
+        channel, action, stroke_width = select_brush(N, 'all')
+
+        st.caption('Image Selection')
+        lv_dia = st.session_state['roundel.edv_esv_selected']["lv_dia_idx"]
+        lv_sys = st.session_state['roundel.edv_esv_selected']["lv_sys_idx"]
+        rv_dia = st.session_state['roundel.edv_esv_selected']["rv_dia_idx"]
+        rv_sys = st.session_state['roundel.edv_esv_selected']["rv_sys_idx"]
+        st.caption(f"Key Frames - LV ED: {lv_dia} | LV ES: {lv_sys} | RV ED: {rv_dia} | RV ES: {rv_sys}")
+        frame_idx = st.slider("Frame Index", 0, T - 1, value=lv_dia, key="roundel.corrector_frame_idx")
+        d, reset_canvas = slice_navigation(D)
+
+        if st.button("Run Corrector Model", use_container_width=True, type='primary'):
+            raw_image = st.session_state['roundel.raw']['image']
+            prior_image_raw = raw_image[:, :, :, frame_idx]
+            prior_mask_smooth = st.session_state['roundel.corrected_prior_mask'][:, :, :, frame_idx, :]
+            x_min, y_min, x_max, y_max = st.session_state['roundel.preprocessed']['crop_box']
+            H_raw, W_raw = raw_image.shape[:2]
+            native_spacing = st.session_state['roundel.pixelspacing']
+
+            # Convert smooth mask → native space for inference
+            prior_labels = np.argmax(prior_mask_smooth, axis=-1).astype(np.uint8)
+            prior_crop = zoom(
+                prior_labels.astype(np.float32), [1 / subpixel_res, 1 / subpixel_res, 1], order=0
+            ).astype(np.uint8)
+            prior_raw_labels = np.zeros((H_raw, W_raw, D), dtype=np.uint8)
+            prior_raw_labels[y_min:y_max, x_min:x_max, :] = prior_crop
+            prior_mask_raw_onehot = np.eye(N, dtype=np.uint8)[prior_raw_labels]
+
+            new_mask = run_corrector_unet(raw_image, prior_image_raw, prior_mask_raw_onehot, native_spacing)
+            st.session_state['roundel.corrected_prior_mask'] = new_mask
+            st.session_state['roundel.corrector_edit_made'] = True
+            st.rerun()
+
+    image_slice = (normalize(image[:, :, d, frame_idx]) * 255).astype(np.uint8)
+    mask_slice = st.session_state['roundel.corrected_prior_mask'][:, :, d, frame_idx, :]
+
+    with col2:
+        stroke_color = (
+            f"rgba{OVERLAY_COLORS[background_idx][:3] + (0.7,)}"
+            if action == "Erase ✂️"
+            else f"rgba{OVERLAY_COLORS[channel][:3] + (0.65,)}"
+        )
+
+        if 'roundel.corrector_canvas' not in st.session_state:
+            st.session_state['roundel.corrector_canvas'] = {
+                'canvas_key': f'corrector_{d}_{frame_idx}',
+                'previous_d': d,
+                'previous_idx': frame_idx,
+            }
+
+        canvas_state = st.session_state['roundel.corrector_canvas']
+        if reset_canvas or canvas_state['previous_d'] != d or canvas_state['previous_idx'] != frame_idx:
+            canvas_state['canvas_key'] = f'corrector_{d}_{frame_idx}'
+        canvas_state['previous_d'] = d
+        canvas_state['previous_idx'] = frame_idx
+
+        canvas_result = st_canvas(
+            stroke_width=stroke_width,
+            stroke_color=stroke_color,
+            background_image=get_overlay(image_slice, mask_slice, H, W, N, OVERLAY_COLORS, 'all'),
+            update_streamlit=True,
+            height=H * DISPLAY_W / W,
+            width=DISPLAY_W,
+            drawing_mode='freedraw',
+            key=canvas_state['canvas_key'],
+        )
+
+        current_objects = (
+            canvas_result.json_data.get("objects", [])
+            if canvas_result and canvas_result.json_data else []
+        )
+
+        col_save, col_clear = st.columns([1, 0.3])
+        with col_save:
+            save_contour = st.button('Save Contour', type='primary', use_container_width=True, key='corrector_save')
+            if save_contour and canvas_result and canvas_result.image_data is not None and current_objects:
+                brush_data = np.array(canvas_result.image_data)
+                rgb = brush_data[:, :, :3].astype(np.float32)
+                alpha = brush_data[:, :, 3].astype(np.float32) / 255.0
+
+                overlay_colors_list = np.array([c[:3] for c in OVERLAY_COLORS.values()], dtype=np.float32)
+                overlay_channels = list(OVERLAY_COLORS.keys())
+
+                h_c, w_c, _ = rgb.shape
+                rgb_flat = rgb.reshape(-1, 3)
+                alpha_flat = alpha.flatten()
+                distances = np.linalg.norm(rgb_flat[:, None, :] - overlay_colors_list[None, :, :], axis=-1)
+                closest_ic = np.argmin(distances, axis=1)
+
+                mask_flat = np.zeros((h_c * w_c, len(overlay_channels)), dtype=np.uint8)
+                for ic, ch in enumerate(overlay_channels):
+                    mask_flat[:, ic] = ((closest_ic == ic) & (alpha_flat > 0)).astype(np.uint8)
+
+                painted = []
+                for ic, ch in enumerate(overlay_channels):
+                    mask_bool = mask_flat[:, ic].reshape(h_c, w_c)
+                    mask_bool = thicken_close_fill_and_smooth(mask_bool, stroke_width)
+                    painted.append(mask_bool)
+                painted_stack = np.stack(painted, axis=-1)
+
+                corrected = st.session_state['roundel.corrected_prior_mask']
+                for ic, ch in enumerate(overlay_channels):
+                    resized = np.array(
+                        Image.fromarray(painted_stack[:, :, ic]).resize(
+                            (W * subpixel_res, H * subpixel_res), resample=Image.NEAREST
+                        )
+                    )
+                    if not np.any(resized > 0):
+                        continue
+                    corrected[:, :, d, frame_idx, :][resized > 0] = 0
+                    corrected[:, :, d, frame_idx, ch][resized > 0] = 1
+
+                st.session_state['roundel.corrected_prior_mask'] = corrected
+                st.session_state['roundel.corrector_edit_made'] = True
+                st.rerun()
+
+        with col_clear:
+            if st.button('❌', use_container_width=True, key='corrector_clear'):
+                st.session_state['roundel.corrected_prior_mask'][:, :, d, frame_idx, :] = 0
+                st.session_state['roundel.corrector_edit_made'] = True
+                st.rerun()
+
+    with col3:
+        st.radio("Corrected Mask", ["Static"], index=0, horizontal=True, disabled=True)
+
+        if st.session_state.get('roundel.corrector_frames') is None or st.session_state.get('roundel.corrector_edit_made'):
+            make_video(
+                image,
+                st.session_state['roundel.corrected_prior_mask'],
+                save_file=f'{str(edited_gif_path)}_corrector',
+                mask_frames='all',
+                ventricle='all',
+            )
+            gif = Image.open(f'{str(edited_gif_path)}_corrector.gif')
+            st.session_state['roundel.corrector_frames'] = [f.copy() for f in ImageSequence.Iterator(gif)]
+            st.session_state['roundel.corrector_edit_made'] = False
+
+        corrector_frames = st.session_state['roundel.corrector_frames']
+        st.image(corrector_frames[frame_idx % len(corrector_frames)], width=int(DISPLAY_W * 1.5))
 
 
 def mask_editor_view():
@@ -1398,17 +1755,17 @@ def final_result_view():
             combined_df = pd.DataFrame({
                 "patient_id": [patient_id],
                 "orthanc_study_id": [orthanc_study_id],
-                "exams_date": [pd.to_datetime(study_date, dayfirst=True).date()],
+                "exams_date": [pd.to_datetime(study_date, dayfirst=True).date() if study_date else None],
                 "lv_edv": [lv_edv],
                 "lv_esv": [lv_esv],
                 "lv_sv": [lv_sv],
                 "lv_ef": [lv_ef],
-                "rv_mass": [rv_mass],
+                "lv_mass": [lv_mass],
                 "rv_edv": [rv_edv],
                 "rv_esv": [rv_esv],
                 "rv_sv": [rv_sv],
                 "rv_ef": [rv_ef],
-                "rv_mass": [rv_mass],
+                "rv_mass": [rv_mass]
             })
 
             EXAMS_PATH = st.session_state["clasp.EXAMS_PATH"]
@@ -1433,6 +1790,217 @@ def final_result_view():
         st.info('Masks and Metrics Previously Saved! ✅')
 
     
+
+    if st.session_state["roundel.saved"] and st.button('Next Patient ➡️', use_container_width=True):
+        reset_app('roundel')
+        for filename in os.listdir(cache_dir):
+            file_path = os.path.join(cache_dir, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        st.rerun()
+
+
+def final_result_view_all():
+    raw = st.session_state['roundel.raw']
+    preprocessed = st.session_state['roundel.preprocessed']
+    pixelspacing = st.session_state['roundel.pixelspacing']
+    thickness = st.session_state['roundel.thickness']
+
+    raw_mask = raw["mask"]
+    preprocessed_image = preprocessed["image"]
+    crop_box = preprocessed['crop_box']
+
+    if not st.session_state['roundel.edv_esv_selected']["confirmed"]:
+        st.error("Select and confirm EDV/ESV first.")
+        st.stop()
+
+    raw_lv_dia_idx = raw["raw_lv_dia_idx"]
+    raw_lv_sys_idx = raw["raw_lv_sys_idx"]
+    raw_rv_dia_idx = raw["raw_rv_dia_idx"]
+    raw_rv_sys_idx = raw["raw_rv_sys_idx"]
+
+    lv_dia_idx = st.session_state['roundel.edv_esv_selected']["lv_dia_idx"]
+    lv_sys_idx = st.session_state['roundel.edv_esv_selected']["lv_sys_idx"]
+    rv_dia_idx = st.session_state['roundel.edv_esv_selected']["rv_dia_idx"]
+    rv_sys_idx = st.session_state['roundel.edv_esv_selected']["rv_sys_idx"]
+    orthanc_study_id = st.session_state['roundel.orthanc_study_id']
+    patient_id = st.session_state['roundel.patient_id']
+    study_date = st.session_state['roundel.study_date']
+
+    final_lv_gif_path = f"{results_path}/gifs/{orthanc_study_id}_lv.gif"
+    final_rv_gif_path = f"{results_path}/gifs/{orthanc_study_id}_rv.gif"
+    final_all_gif_path = f"{results_path}/gifs/{orthanc_study_id}_all.gif"
+
+    if 'roundel.corrected_prior_mask' not in st.session_state:
+        st.session_state['roundel.corrected_prior_mask'] = st.session_state['roundel.smooth_mask'].copy()
+
+    subpixel_resolution = st.session_state['roundel.subpixel_resolution']
+    _pre_zoom = st.session_state['roundel.corrected_prior_mask']
+    _labels = np.argmax(_pre_zoom, axis=-1)  # (H_smooth, W_smooth, D, T)
+    _labels_native = zoom(
+        _labels.astype(np.float32),
+        [1 / subpixel_resolution, 1 / subpixel_resolution, 1, 1],
+        order=0,
+    ).astype(np.uint8)
+    combined_mask = np.eye(st.session_state['roundel.N'], dtype=np.uint8)[_labels_native]
+
+    # # --- Optional debugging: compare pixel counts before/after cv_zoom_mask ---
+    # _class_names = ['background', 'LV pool', 'RV pool', 'LV myo', 'RV myo']
+    # _diag_channels = [lv_idx, rv_idx, lv_myo_idx, rv_myo_idx]
+    # print(f"\n[cv_zoom_mask diagnostic]")
+    # print(f"  Pre-zoom  shape: {_pre_zoom.shape}  (subpixel_resolution={subpixel_resolution})")
+    # print(f"  Post-zoom shape: {combined_mask.shape}")
+    # for _ci in _diag_channels:
+    #     _pre_count  = int(_pre_zoom[..., _ci].sum())
+    #     _post_count = int(combined_mask[..., _ci].sum())
+    #     _expected   = _pre_count / (subpixel_resolution ** 2)
+    #     _ratio = (_post_count / _expected) if _expected > 0 else float('nan')
+    #     print(f"  {_class_names[_ci]:10s}:  pre={_pre_count:7d} px  post={_post_count:6d} px  "
+    #           f"expected~{_expected:6.0f}  retention={_ratio:.2f}")
+    # _mid_d = _pre_zoom.shape[2] // 2
+    # _fig, _axes = plt.subplots(len(_diag_channels), 2, figsize=(8, len(_diag_channels) * 2))
+    # for _row, _ci in enumerate(_diag_channels):
+    #     _pre_sl  = _pre_zoom[:, :, _mid_d, lv_dia_idx, _ci]
+    #     _post_sl = combined_mask[:, :, _mid_d, lv_dia_idx, _ci]
+    #     _axes[_row, 0].imshow(_pre_sl, cmap='gray', vmin=0, vmax=1)
+    #     _axes[_row, 0].set_title(f"{_class_names[_ci]} pre ({int(_pre_sl.sum())}px)", fontsize=8)
+    #     _axes[_row, 0].axis('off')
+    #     _axes[_row, 1].imshow(_post_sl, cmap='gray', vmin=0, vmax=1)
+    #     _axes[_row, 1].set_title(f"{_class_names[_ci]} post ({int(_post_sl.sum())}px)", fontsize=8)
+    #     _axes[_row, 1].axis('off')
+    # _fig.suptitle(
+    #     f"cv_zoom_mask: zoom=1/{subpixel_resolution}  |  depth={_mid_d}, frame=lv_edv({lv_dia_idx})",
+    #     fontsize=10,
+    # )
+    # _fig.tight_layout()
+    # _debug_path = "/Users/Ruaraidh/Documents/UCL_CDT/PhD_Year1/cMRI_projects/imageCLASP/plots"
+    # _debug_plot_path = str(f"{_debug_path}/{orthanc_study_id}_zoom_debug.png")
+    # _fig.savefig(_debug_plot_path, bbox_inches='tight', dpi=120)
+    # plt.close(_fig)
+    # print(f"  Debug plot saved: {_debug_plot_path}")
+    # # --- End debugging ---
+
+    lv_volume, lv_masses, lv_edv, lv_esv, lv_sv, lv_ef, lv_mass = calculate_sax_metrics(
+        mask=combined_mask, blood_pool_idx=lv_idx, myo_idx=lv_myo_idx,
+        dia_idx=lv_dia_idx, sys_idx=lv_sys_idx
+    )
+    raw_lv_volume, raw_lv_masses, raw_lv_edv, raw_lv_esv, raw_lv_sv, raw_lv_ef, raw_lv_mass = calculate_sax_metrics(
+        mask=raw_mask, blood_pool_idx=lv_idx, myo_idx=lv_myo_idx,
+        dia_idx=raw_lv_dia_idx, sys_idx=raw_lv_sys_idx
+    )
+    rv_volume, rv_masses, rv_edv, rv_esv, rv_sv, rv_ef, rv_mass = calculate_sax_metrics(
+        mask=combined_mask, blood_pool_idx=rv_idx, myo_idx=rv_myo_idx,
+        dia_idx=rv_dia_idx, sys_idx=rv_sys_idx
+    )
+    raw_rv_volume, raw_rv_masses, raw_rv_edv, raw_rv_esv, raw_rv_sv, raw_rv_ef, raw_rv_mass = calculate_sax_metrics(
+        mask=raw_mask, blood_pool_idx=rv_idx, myo_idx=rv_myo_idx,
+        dia_idx=raw_rv_dia_idx, sys_idx=raw_rv_sys_idx
+    )
+
+    x_min, y_min, x_max, y_max = crop_box
+    final_mask_2d = np.zeros_like(raw_mask)
+    final_mask_2d[y_min:y_max, x_min:x_max, :, :, :] = combined_mask
+    final_mask_2d = np.argmax(final_mask_2d, axis=-1)
+
+    make_video(preprocessed_image,
+               final_mask_2d[y_min:y_max, x_min:x_max, :, :],
+               save_file=final_lv_gif_path,
+               mask_frames=[lv_dia_idx, lv_sys_idx],
+               ventricle='all')
+    make_video(preprocessed_image,
+               final_mask_2d[y_min:y_max, x_min:x_max, :, :],
+               save_file=final_rv_gif_path,
+               mask_frames=[rv_dia_idx, rv_sys_idx],
+               ventricle='all')
+    make_video(preprocessed_image,
+               final_mask_2d[y_min:y_max, x_min:x_max, :, :],
+               save_file=final_all_gif_path,
+               mask_frames='all',
+               ventricle='all')
+
+    col_all, _, col_lv, _, col_rv = st.columns([1, 0.05, 1, 0.05, 1])
+    with col_all:
+        st.markdown('#### All Frames')
+        st.caption("Corrected Mask")
+        st.image(final_all_gif_path, use_container_width=True)
+
+    with col_lv:
+        st.markdown('#### Left Ventricle')
+        col1, col2 = st.columns([0.3, 0.7])
+        with col1:
+            st.caption("LV Metrics")
+            st.metric("EDV", f"{lv_edv:.1f}mL", delta=format_delta(lv_edv, raw_lv_edv, "mL"))
+            st.metric("ESV", f"{lv_esv:.1f}mL", delta=format_delta(lv_esv, raw_lv_esv, "mL"))
+            st.metric("EF", f"{lv_ef:.1f}%", delta=format_delta(lv_ef, raw_lv_ef, "%", round_digits=1))
+            st.metric("Mass", f"{lv_mass:.1f}g", delta=format_delta(lv_mass, raw_lv_mass, "g"))
+        with col2:
+            st.caption("Final LV Mask")
+            st.image(final_lv_gif_path)
+
+    with col_rv:
+        st.markdown('#### Right Ventricle')
+        col1, col2 = st.columns([0.3, 0.7])
+        with col1:
+            st.caption("RV Metrics")
+            st.metric("EDV", f"{rv_edv:.1f}mL", delta=format_delta(rv_edv, raw_rv_edv, "mL"))
+            st.metric("ESV", f"{rv_esv:.1f}mL", delta=format_delta(rv_esv, raw_rv_esv, "mL"))
+            st.metric("EF", f"{rv_ef:.1f}%", delta=format_delta(rv_ef, raw_rv_ef, "%", round_digits=1))
+            st.metric("Mass", f"{rv_mass:.1f}g", delta=format_delta(rv_mass, raw_rv_mass, "g"))
+        with col2:
+            st.caption("Final RV Mask")
+            st.image(final_rv_gif_path)
+
+    save_button = st.button('Save Masks and Metrics 💾', type='primary', use_container_width=True)
+
+    if save_button:
+        with st.spinner('Saving...'):
+            final_mask_2d_flat = flatten_4d_array(final_mask_2d * st.session_state['clasp.MASK_SCALER'])
+            new_sax_df = st.session_state['roundel.sax_df'].copy()
+            new_sax_df['PixelArray'] = final_mask_2d_flat
+            study = fetch_db_study(st.session_state['roundel.current_study_id'])
+            for series_orthanc_id, series_df in new_sax_df.groupby('OrthancSeriesID'):
+                old_dcms = [fetch_orthanc_dicom(id) for id in series_df.OrthancInstanceID]
+                new_masks = [mask for mask in series_df.PixelArray]
+                new_orthanc_id = send_series_to_orthanc(new_masks, old_dcms, new_description='Roundel')
+                series = fetch_db_series(study, series_orthanc_id)
+                series.roundel_orthanc_id = new_orthanc_id
+                study.series_dict[series_orthanc_id] = series
+            db = TinyDB(st.session_state['clasp.DB_PATH'])
+            update_study(db, study)
+
+            combined_df = pd.DataFrame({
+                "patient_id": [patient_id],
+                "orthanc_study_id": [orthanc_study_id],
+                "exams_date": [pd.to_datetime(study_date, dayfirst=True).date() if study_date else None],
+                "lv_edv": [lv_edv],
+                "lv_esv": [lv_esv],
+                "lv_sv": [lv_sv],
+                "lv_ef": [lv_ef],
+                "lv_mass": [lv_mass],
+                "rv_edv": [rv_edv],
+                "rv_esv": [rv_esv],
+                "rv_sv": [rv_sv],
+                "rv_ef": [rv_ef],
+                "rv_mass": [rv_mass],
+            })
+
+            EXAMS_PATH = st.session_state["clasp.EXAMS_PATH"]
+            if os.path.exists(EXAMS_PATH):
+                exams_df = pd.read_csv(EXAMS_PATH)
+                exams_df = pd.concat([exams_df, combined_df], ignore_index=True)
+                exams_df = exams_df.drop_duplicates(subset="orthanc_study_id", keep="last")
+            else:
+                exams_df = combined_df
+            exams_df.to_csv(EXAMS_PATH, index=False)
+            st.session_state["roundel.saved"] = True
+
+        if st.session_state.get("roundel.saved", False):
+            st.success('Masks and Metrics Overwritten! ✅')
+        else:
+            st.success('Masks and Metrics Saved! ✅')
+
+    elif st.session_state.get("roundel.saved", False):
+        st.info('Masks and Metrics Previously Saved! ✅')
 
     if st.session_state["roundel.saved"] and st.button('Next Patient ➡️', use_container_width=True):
         reset_app('roundel')

@@ -102,11 +102,7 @@ def load_demographics() -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing required columns in demographics CSV: {missing}")
 
-    df["patient_id"] = (
-        pd.to_numeric(df["patient_id"], errors="coerce")
-        .astype("Int64")
-        .astype(str)
-    )
+    df["patient_id"] = df["patient_id"].astype(str).str.strip()
     
     for col in ["first_name", "last_name", "sex", "dob"]:
         if col not in df.columns:

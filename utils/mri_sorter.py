@@ -8,9 +8,14 @@ import streamlit as st
 
 class MRI_Sorter:
     def __init__(self, study):
-        series_list = study.series_dict.values()
-        series_list = [series for series in series_list if series.dl_orthanc_id is None and series.roundel_orthanc_id is None]
-        series_list = [series for series in series_list if series.series_type is None]
+        all_series = list(study.series_dict.values())
+        already_processed = [s for s in all_series if s.dl_orthanc_id is not None or s.roundel_orthanc_id is not None]
+        already_typed = [s for s in all_series if s.series_type is not None and s.dl_orthanc_id is None and s.roundel_orthanc_id is None]
+        series_list = [s for s in all_series if s.dl_orthanc_id is None and s.roundel_orthanc_id is None and s.series_type is None]
+        print(f"[SORTER] Study has {len(all_series)} series total: "
+              f"{len(already_processed)} skipped (already processed), "
+              f"{len(already_typed)} skipped (already typed), "
+              f"{len(series_list)} to classify")
         sort_df = pd.DataFrame()
 
         if series_list:
@@ -50,31 +55,50 @@ class MRI_Sorter:
             return np.nan
     
     def classify_series(self, series_df, series_type, dimension):
-        description = series_df.iloc[0]["SeriesDescription"].lower()
-        if any(k in description for k in ["sax", "ml cine", "short",'sa_ipat']):
-            return "SAX"
-        elif "4ch" in description:
-            return "4CH"
-        elif "2ch" in description:
-            return "LV_LAX"
-        
-        else:
-            mid_slice = series_df.SliceLocation.values[len(series_df.SliceLocation.values) // 2]
+        raw_desc = series_df.iloc[0]["SeriesDescription"]
+        description = raw_desc.lower()
+        keywords = {"SAX": ["sax", "ml cine", "short", "sa_ipat"], "4CH": ["4ch"], "Other": ["2ch", "3ch", "r2ch", "lvot", "rvot"]}
+        for label, kws in keywords.items():
+            if any(k in description for k in kws):
+                print(f"[CLASSIFY] '{raw_desc}' → keyword match: {label}")
+                return label
 
-            mid_dia_id = series_df.loc[
-                series_df['SliceLocation'] == mid_slice
-            ].iloc[0]['ID']
+        earliest_frame_ids = (
+            series_df.sort_values('InstanceNumber')
+            .groupby('SeriesUID')['ID']
+            .first()
+        )
+        slices = [fetch_orthanc_dicom(iid).pixel_array for iid in earliest_frame_ids]
+        image_3d = np.stack(slices)  # (S, H, W)
+        print(f"[DEBUG CLASSIFER] - image_3d shape: {image_3d.shape}")
 
-            image = fetch_orthanc_dicom(mid_dia_id).pixel_array
-
+        # Apply classifier model
+        probs_list = {}
+        for s in range(image_3d.shape[0]):
+            image_2d = image_3d[s, ...]  # (H, W)
             with torch.no_grad():
-                output = model(preprocess(image))
-                probs = torch.softmax(output, dim=1).squeeze()
+                logits = model(preprocess_resnet_classifier(image_2d).to(device))
+                probs = torch.softmax(logits, dim=1)
+                probs_list[s] = probs.squeeze(0).cpu()
 
-            label = label_dict[np.argmax(probs).item()]
+        # Add probabilities over all slices and average with gaussian weighting
+        all_probs = torch.stack(list(probs_list.values()), dim=0)  # (S, num_classes)
+        n_slices = all_probs.shape[0]
+        mid = (n_slices - 1) / 2.0
+        sigma = n_slices / 4.0
+        indices = torch.arange(n_slices, dtype=torch.float32)
+        weights = torch.exp(-0.5 * ((indices - mid) / sigma) ** 2)  # Gaussian centred on middle slice
+        weights = weights / weights.sum()  # normalise so weights sum to 1
+        # print(f"Gaussian weights for each slice: {weights}")
+        weighted_probs = (all_probs * weights.unsqueeze(1)).sum(dim=0)  # (num_classes,)
+        # print(f"Weighted average probs across slices: {weighted_probs}")
+        pred = torch.argmax(weighted_probs).item()
 
-            print(label, series_df['SeriesDescription'].values[0])
-            return label
+        # Get corresponding label
+        label = label_dict[pred]
+        prob_str = ", ".join(f"{label_dict[i]} (p={weighted_probs[i]:.2f})" for i in range(len(weighted_probs)))
+        print(f"[CLASSIFY] '{raw_desc}' → no keyword match, CNN: {prob_str} → {label}")
+        return label
                 
     def update_sort_dict(self, sort_dict, dimension, all_series_list, series_type, flow_flag, cine_flag, stack_flag):
         for group_tag, all_series_df in enumerate(all_series_list):
@@ -97,17 +121,22 @@ class MRI_Sorter:
         return sort_dict
 
     def extract_series_df(self, series):
+        desc = getattr(series, "series_description", series.orthanc_series_id)
         instance_list = fetch_orthanc_instances_for_series(series.orthanc_series_id)
 
         if not instance_list:
+            print(f"[EXTRACT] '{desc}' → skipped: no instances")
             return pd.DataFrame()
 
         # read first DICOM for shared series-level fields and RR
         ds0 = fetch_orthanc_dicom(instance_list[0]['ID'])
         if not ("PixelData" in ds0 and "ImageOrientationPatient" in ds0):
+            print(f"[EXTRACT] '{desc}' → skipped: no PixelData/IOP")
             return pd.DataFrame()
 
         image_shape = (ds0.Rows, ds0.Columns)
+        dimension = int(getattr(ds0, "MRAcquisitionType", "0").replace("D", "")) if hasattr(ds0, "MRAcquisitionType") else None
+        print(f"[EXTRACT] '{desc}' → Dimension={dimension}, N={len(instance_list)}")
         series_fields = {
             "SeriesUID": series.orthanc_series_id,
             "SeriesDescription": getattr(ds0, "SeriesDescription", None),
@@ -190,12 +219,17 @@ class MRI_Sorter:
                         separated = False
 
                         for uni_series, series_df in shape_group.groupby('SeriesUID'):
-
-                            if len(series_df) > 50 and series_df['SliceLocation'].nunique() > 1:
-
-                                if self._is_contiguous_slicelocation(series_df['SliceLocation']):
+                            n_frames = len(series_df)
+                            n_slices = series_df['SliceLocation'].nunique()
+                            desc_val = series_df.iloc[0].get('SeriesDescription', uni_series)
+                            contiguous = self._is_contiguous_slicelocation(series_df['SliceLocation'])
+                            if n_frames > 50 and n_slices > 1:
+                                print(f"[STACK] '{desc_val}' n_frames={n_frames} n_slices={n_slices} contiguous={contiguous} → {'accepted' if contiguous else 'rejected'}")
+                                if contiguous:
                                     cine_stack_list.append(series_df)
                                     separated = True
+                            else:
+                                print(f"[STACK] '{desc_val}' n_frames={n_frames} n_slices={n_slices} → rejected (too few frames/slices)")
 
                         if (
                             not separated
@@ -271,6 +305,8 @@ class MRI_Sorter:
 
         for series_df in cine_stack_list:
             n_images = len(series_df)
+            uid = series_df['SeriesUID'].iloc[0]
+            desc_val = series_df.iloc[0].get('SeriesDescription', uid)
 
             n_slices = series_df.SliceLocation.nunique()
 
@@ -282,6 +318,7 @@ class MRI_Sorter:
 
             # route oversized stacks directly
             if n_times > max_timesteps:
+                print(f"[SPLIT] '{desc_val}' n_times={n_times} n_slices={n_slices} → multi-heartbeat (n_times>{max_timesteps})")
                 cine_stack_multi_heartbeat.append(series_df)
                 continue
 
@@ -305,13 +342,19 @@ class MRI_Sorter:
             is_valid_size = n_slices > min_slices and n_times > min_timesteps
 
             if is_constant:
+                bucket = "Cine Stack" if is_valid_size else "SS_MH (too small)"
+                print(f"[SPLIT] '{desc_val}' n_times={n_times} n_slices={n_slices} triggertimes=constant is_valid_size={is_valid_size} → {bucket}")
                 (new_cine_stack_list if is_valid_size else ss_mh_list).append(series_df)
                 continue
 
             if cv < cv_threshold:
+                print(f"[SPLIT] '{desc_val}' n_times={n_times} n_slices={n_slices} cv={cv:.3f} → SS_MH (low cv)")
                 ss_mh_list.append(series_df)
             elif is_valid_size:
+                print(f"[SPLIT] '{desc_val}' n_times={n_times} n_slices={n_slices} cv={cv:.3f} is_valid_size={is_valid_size} → Cine Stack")
                 new_cine_stack_list.append(series_df)
+            else:
+                print(f"[SPLIT] '{desc_val}' n_times={n_times} n_slices={n_slices} cv={cv:.3f} is_valid_size={is_valid_size} → dropped")
 
         return new_cine_stack_list, ss_mh_list, cine_stack_multi_heartbeat
         

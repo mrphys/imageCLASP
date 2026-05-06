@@ -17,9 +17,9 @@ scipy==1.17.0
 tinydb==4.8.2
 tqdm==4.67.3
 wheel==0.45.1
-torch==2.3.0
-torchvision==0.18.0
-torchaudio==2.3.0
+torch==2.9.0
+torchvision==0.24.0
+torchaudio==2.9.0
 albumentations==2.0.8
 duckdb==1.5.1
 tk==0.1.0

@@ -25,11 +25,12 @@ for study in studies:
     sax_dl_df = df[(df['dl_orthanc_id'].notna()) & (df['roundel_orthanc_id'].isna())]
 
     if len(sax_dl_df) > 0:
-        patient_name = study.patient_name.split('^')
-        last_name, first_name = patient_name
+        parts = study.patient_name.split('^') if study.patient_name else []
+        last_name = parts[0] if len(parts) > 0 else ""
+        first_name = parts[1] if len(parts) > 1 else ""
         description = sax_dl_df['series_description'].values[0]
         
-        study_date = datetime.strptime(study.study_date, "%Y%m%d").strftime("%d/%m/%Y")
+        study_date = datetime.strptime(study.study_date, "%Y%m%d").strftime("%d/%m/%Y") if study.study_date else "Unknown date"
         study_dict[study.orthanc_study_id] = study
         study_description[f'{first_name} {last_name} | {study_date} | {description}'] = study.orthanc_study_id
         
@@ -65,7 +66,7 @@ with col1:
 if 'roundel.initialized' not in st.session_state:
     initialize_app(study)
 
-view_options = ["EDV/ESV Finder 🔍", "Mask Editor 📝", "Final Result ✅"]
+view_options = ["Preview Segmentation 👁️", "EDV/ESV Finder 🔍", "Mask Editor 📝", "Final Result ✅"]
 
 # repair old stored values
 if "roundel.view" not in st.session_state:
@@ -101,11 +102,20 @@ if view == "EDV/ESV Finder 🔍":
 # --------------------------------------------------------------
 
 if view == "Mask Editor 📝":
-    mask_editor_view()
+    if st.session_state.get("roundel.mask_editor_mode") == "all_frames":
+        corrector_model_view()
+    else:
+        mask_editor_view()
 
 
 # --------------------------------------------------------------
 # Final Result
 # --------------------------------------------------------------
+if view == "Preview Segmentation 👁️":
+    preview_segmentation_view()
+
 if view == "Final Result ✅":
-    final_result_view()
+    if st.session_state.get("roundel.mask_editor_mode") == "all_frames":
+        final_result_view_all()
+    else:
+        final_result_view()
