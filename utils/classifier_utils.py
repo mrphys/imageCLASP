@@ -7,7 +7,7 @@ from .classifier import *
 import streamlit as st
 
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
-CLASSIFIER_PATH = f"{st.session_state['clasp.MODELS_PATH']}/view_classification-33.pth"
+CLASSIFIER_PATH = f"{st.session_state['clasp.MODELS_PATH']}/view_classification-35.pth"
 model = ResNet18Classifier2d(num_classes=3) # cine_sax=0, cine_lax_4ch=1, all other types=2
 state_dict = torch.load(CLASSIFIER_PATH, map_location=device)
 model.load_state_dict(state_dict)
@@ -57,6 +57,40 @@ def z_normalise_image_classifier(image):
     
     return image
 
+# Function to pad a 2D image to make it square
+def pad_to_square(image):
+    """
+    Pad a 2D image to make it square by adding zeros to the shorter dimension.
+
+    Args:
+        image (numpy array): 2D image array of shape (H, W).
+
+    Returns:
+        numpy array: Padded square image array of shape (max(H, W), max(H, W)).
+    """
+    height, width = image.shape
+    if height == width:
+        return image  # Already square
+
+    if height > width:
+        pad_width = (height - width) // 2
+        padded_image = np.pad(image, ((0, 0), (pad_width, pad_width)), mode='constant', constant_values=0)
+    else:
+        pad_height = (width - height) // 2
+        padded_image = np.pad(image, ((pad_height, pad_height), (0, 0)), mode='constant', constant_values=0)
+
+    # Check that the padded image is now square
+    new_height, new_width = padded_image.shape
+    if new_height != new_width:
+        # add the difference to the end of the shorter dimension if the original difference was odd
+        if new_height < new_width:
+            padded_image = np.pad(padded_image, ((0, new_width - new_height), (0, 0)), mode='constant', constant_values=0)
+        else:
+            padded_image = np.pad(padded_image, ((0, 0), (0, new_height - new_width)), mode='constant', constant_values=0)
+
+    return padded_image
+
+
 
 def preprocess(image):
     image = square_crop(image)
@@ -74,6 +108,9 @@ def preprocess_resnet_classifier(image):
     '''
     Preprocess an image for feeding to view classification model. 
     '''
+    # Pad image to make it square 
+    image = pad_to_square(image)
+    
     image = resize_transform(image=image)["image"]
     image = image.astype(np.float32)
 
