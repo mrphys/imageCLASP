@@ -1,3 +1,32 @@
+# Copyright 2026 University College London. All Rights Reserved.
+ #
+ # CLASP
+ # Created by Tina Yao and Vivek Muthurangu
+ #
+ # Licensed under the Elastic License 2.0 (ELv2).
+ # You may not use this file except in compliance with the License.
+ #
+ # You may obtain a copy of the License at:
+ #
+ # https://www.elastic.co/licensing/elastic-license
+ #
+ # The Software may be used, copied, modified, and distributed,
+ # subject to the terms of the Elastic License 2.0.
+ #
+ # You may not:
+ # 1. Provide the Software as a hosted or managed service where
+ # the Software itself constitutes the primary value.
+ # 2. Remove or obscure licensing, copyright, or attribution notices.
+ # 3. Misrepresent modified versions as the original Software.
+ #
+ # Unless required by applicable law or agreed to in writing,
+ # software distributed under this License is provided "AS IS",
+ # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ # or implied.
+ #
+ # See the Elastic License 2.0 for specific permissions and
+ # limitations under the License
+
 import sys
 from pathlib import Path
 import pandas as pd
