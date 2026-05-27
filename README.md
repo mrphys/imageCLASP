@@ -1,6 +1,6 @@
 # ImageCLASP
 
-[![CLASP](https://markdown-videos-api.jasoncameron.dev/youtube/F4cwBQrVG_A)](https://youtu.be/F4cwBQrVG_A)
+[![CLASP](https://img.youtube.com/vi/F4cwBQrVG_A/0.jpg)](https://youtu.be/F4cwBQrVG_A)
 
 **ImageCLASP** (Image Content Linking with AI and Supervised Processing) is a medical imaging platform for managing MRI data and extracting clinically relevant biomarkers using AI driven analysis pipelines.
 
