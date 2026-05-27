@@ -27,7 +27,6 @@
  # See the Elastic License 2.0 for specific permissions and
  # limitations under the License
 
-
 import sys
 from pathlib import Path
 import pandas as pd
