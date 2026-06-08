@@ -265,41 +265,38 @@ def save_4d_gif(image_4d, save_path, fps=8, slice_locations=None):
 
 
 def run_inference_on_scan(image_3d, pixel_spacing, timestep):
+    """
+    Function to run segmentation model inference. 
 
+    The current implementation runs inference on each 3D SAX frame independently, but you can modify this to run on 2D+T, 3D, or 4D inputs as needed for your model. 
+
+    """
+
+    # Apply function to preprocess the input image in the same way as training (e.g. resampling, cropping/padding, normalisation)
     preprocessed_image_3d, meta = preprocess_scan_like_training(image_3d, pixel_spacing, target_shape=TARGET_SHAPE)
-
-    # # Optional - Save plot of the 3d image before inference
-    # n_slices = preprocessed_image_3d.shape[2]
-    # fig, axes = plt.subplots(1, n_slices, figsize=(3 * n_slices, 3))
-    # if n_slices == 1:
-    #     axes = [axes]
-    # for i, ax in enumerate(axes):
-    #     ax.imshow(preprocessed_image_3d[:, :, i], cmap='gray')
-    #     ax.set_title(f'Slice {i}')
-    #     ax.axis('off')
-    # fig.suptitle(f'Preprocessed image (t={timestep})')
-    # fig.savefig(f'/Users/Ruaraidh/Documents/UCL_CDT/PhD_Year1/cMRI_projects/imageCLASP/plots/debug_og_image_time{timestep}.png', bbox_inches='tight')
-    # plt.close(fig)
     
+    # Transpose to put slices at end and then add channel and batch dimensions and transpose: (1, 1, H, W, S)
     X = preprocessed_image_3d.transpose(2, 0, 1)[np.newaxis, np.newaxis, ...].astype(np.float32)
     
     start = time.time()
+    # Run sliding window inference 
     prob_map, _ = monai_sliding_window_inference_3d(
             model, X,
             patch_size=(256, 256, 10),
             overlap=0.5,
             apply_softmax=False,
             out_channels=5,
-            # tta=device.type != 'cpu', 
-            tta=False,
+            tta=device.type != 'cpu', # Apply test-time augmentation (TTA) if using GPU for inference, else run without TTA for speed on CPU
             deep_supervision=True,
         )
     
+    # Convert predicted probability map to discrete labels, reverse the cropping/padding, and resample back to native spacing
     pred_mask = np.argmax(prob_map, axis=-1).astype(np.uint8)
     pred_mask = reverse_crop_pad(pred_mask, meta)
     pred_mask = resample_mask(pred_mask, pixel_spacing)
     end = time.time()
     
+    # Convert to uint16 and transpose back to (S, H, W)
     pred_mask = np.uint16(pred_mask)
     pred_mask = np.transpose(np.array(pred_mask), (2,0,1))
 

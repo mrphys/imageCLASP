@@ -57,7 +57,7 @@ class MRI_Sorter:
     def classify_series(self, series_df, series_type, dimension):
         raw_desc = series_df.iloc[0]["SeriesDescription"]
         description = raw_desc.lower()
-        keywords = {"SAX": ["sax", "ml cine", "short", "sa_ipat"], "4CH": ["4ch"], "Other": ["2ch", "3ch", "r2ch", "lvot", "rvot"]}
+        keywords = {"SAX": ["sax", "short"], "4CH": ["4ch"], "Other": ["2ch", "3ch", "r2ch", "lvot", "rvot"]}
         for label, kws in keywords.items():
             if any(k in description for k in kws):
                 print(f"[CLASSIFY] '{raw_desc}' → keyword match: {label}")

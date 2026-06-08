@@ -1495,10 +1495,14 @@ def mask_editor_view():
 
             st.session_state['roundel.canvas']['previous_d'] = d
 
+            _bg_key = f"roundel.bg_overlay_{ventricle}_{d}_{idx}"
+            if _bg_key not in st.session_state:
+                st.session_state[_bg_key] = get_overlay(image_slice, mask_slice, H, W, N, OVERLAY_COLORS, ventricle)
+
             canvas_result = st_canvas(
                 stroke_width=stroke_width,
                 stroke_color=stroke_color,
-                background_image=get_overlay(image_slice, mask_slice, H, W, N, OVERLAY_COLORS, ventricle),
+                background_image=st.session_state[_bg_key],
                 update_streamlit=True,
                 height = H*DISPLAY_W/W,
                 width=DISPLAY_W,

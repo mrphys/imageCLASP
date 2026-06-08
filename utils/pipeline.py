@@ -183,15 +183,19 @@ def sax_segmentation_pipeline(study):
     # Sort slices by ascending slice location
     sax_orthanc_ids = sorted(sax_orthanc_ids, key=lambda sid: slice_locations[sid])
 
-    # Loop through each frame of the SAX (3D) and predict
+    # CREATE 4D IMAGE ARRAY (S, T, H, W)
     image_4d = np.array([image_2dts[sid] for sid in sax_orthanc_ids])  # S, T, H, W
-
-    # Optional - save a gif of the 4d image to check slice and timestep ordering
+    mask_4d = np.zeros_like(image_4d)
+    ## Optional - save a gif of the 4d image to check slice and timestep ordering
     # print(f"image 4d shape before inference: {image_4d.shape}")
     # slice_locs = [slice_locations[sid] for sid in sax_orthanc_ids]
     # save_4d_gif(image_4d, str(PLOTS_PATH / f"{study.orthanc_study_id}_sax.gif"), slice_locations=slice_locs)
 
-    mask_4d = np.zeros_like(image_4d)
+    ### START OF SECTION TO INTEGRATE YOUR OWN SEGMENTATION MODEL ###
+    ### Slice the 4D image as needed for inputs to your model (e.g. 2D, 2D+T, 3D, 4D) and edit the run_inference_on_scan function to run your model ###
+    ### Remember to reassign the output mask to the correct location in the 4D mask array so that it gets uploaded to the correct series in Orthanc! ###
+
+    # Loop through each frame of the 4D array and predict on 3D SAX
     for frame in range(image_4d.shape[1]):
         image_3d = image_4d[:, frame, :, :] # S, H, W
         image_3d = np.transpose((image_3d), (1,2,0))  # H,W,S for run inference()
@@ -199,6 +203,8 @@ def sax_segmentation_pipeline(study):
         completed += 1
         progress_bar.progress(completed / total_frames, text=f"## **SAX Segmentation:** {completed}/{total_frames} frames ({completed/total_frames:.1%})")
 
+    ### END OF SECTION TO INTEGRATE YOUR OWN SEGMENTATION MODEL ###
+    
     # Upload each 2D+T mask back to Orthanc
     for idx, sid in enumerate(sax_orthanc_ids):
         old_dcms = old_dcm_list[sid]
