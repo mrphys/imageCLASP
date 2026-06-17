@@ -75,7 +75,7 @@ def file_browser():
 
     current_path = st.session_state["dashboard.upload_path"]
 
-    # breadcrumbs UI
+    # bread# breadcrumbs UI
     crumbs = breadcrumbs(current_path)
 
     MAX_VISIBLE_CRUMBS = 4
@@ -101,6 +101,7 @@ def file_browser():
     for i, (name, crumb_path) in enumerate(display_crumbs):
         with cols[i]:
             label = display_name(name)
+
             if crumb_path == current_path:
                 st.button(label, disabled=True, use_container_width=True)
             else:
