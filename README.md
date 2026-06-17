@@ -13,7 +13,7 @@ The platform is designed to support federated analysis workflows, enabling hospi
 * Local data storage for privacy preserving research 
 * Integration with Orthanc PACS server
 * Clinical and research-oriented imaging pipelines 
-* statistics package added
+* Statistics package added
 
 ## Distribution
 
