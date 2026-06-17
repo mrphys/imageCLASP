@@ -98,14 +98,14 @@ def upsert_demographics_csv(row_df: pd.DataFrame, path: str) -> None:
 
 def load_demographics() -> pd.DataFrame:
     df = pd.read_csv(DEMOGRAPHICS_PATH, dtype={"patient_id": str})
-    df = df.loc[df['data_entered'] == False]
     df.columns = [c.strip() for c in df.columns]
+    df = df.loc[df['data_entered'] == False]
 
     required = ["patient_id"]
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError(f"Missing required columns in demographics CSV: {missing}")
-
+        
     df["patient_id"] = df["patient_id"].astype(str).str.strip()
     
     for col in ["first_name", "last_name", "sex", "dob"]:
