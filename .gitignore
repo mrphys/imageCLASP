@@ -13,4 +13,7 @@ dist
 .venv
 models/corrector_unet_model.pth
 models/initial_unet_model.pth
+models/view_classification-35.pth
+models/SAX-Seg-186.pth
+models/SAX-Seg-188.pth
 plots/
