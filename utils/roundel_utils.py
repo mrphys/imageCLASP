@@ -1403,7 +1403,7 @@ def final_result_view():
                 "lv_esv": [lv_esv],
                 "lv_sv": [lv_sv],
                 "lv_ef": [lv_ef],
-                "rv_mass": [rv_mass],
+                "lv_mass": [lv_mass],
                 "rv_edv": [rv_edv],
                 "rv_esv": [rv_esv],
                 "rv_sv": [rv_sv],
