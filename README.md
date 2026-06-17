@@ -63,7 +63,7 @@ sudo systemctl start orthanc
 
 ### Orthanc Integration
 
-ImageCLASP uses Orthanc as the underlying DICOM server for MRI data storage and communication.
+ImageCLASP uses Orthanc as the underlying DICOM server for MRI data storage and communication. Orthanc is an open-source, lightweight DICOM server designed to facilitate medical imaging workflows and interoperability. For further details, see [The Orthanc Ecosystem for Medical Imaging](https://link.springer.com/article/10.1007/s10278-018-0082-y).
 
 Default Orthanc service management:
 
