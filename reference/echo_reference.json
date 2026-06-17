@@ -1,0 +1,82 @@
+[
+    {
+      "parameter": "LV EF",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "LVEDD (mm)",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "LVESD (mm)",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "LA Area (cm2)",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "RA Area (cm2)",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "RV Basal Diameter (mm)",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "TAPSE",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "TR Vmax (m/s)",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "Diastolic Function",
+      "entry_type": "list",
+      "value": [
+        "Normal",
+        "Grade I",
+        "Grade II",
+        "Grade III"
+      ]
+    },
+    {
+      "parameter": "Left Valvular Disease",
+      "entry_type": "list",
+      "value": [
+        "None",
+        "Mild",
+        "Moderate",
+        "Severe"
+      ]
+    },
+    {
+      "parameter": "Right Valvular Disease",
+      "entry_type": "list",
+      "value": [
+        "None",
+        "Mild",
+        "Moderate",
+        "Severe"
+      ]
+    },
+    {
+      "parameter": "Pericardial Effusion",
+      "entry_type": "list",
+      "value": [
+        "None",
+        "Mild",
+        "Moderate",
+        "Severe"
+      ]
+    }
+  ]

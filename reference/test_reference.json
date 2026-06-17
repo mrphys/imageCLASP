@@ -1,0 +1,16 @@
+[
+  {
+    "parameter": "biomarker1",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "biomarker2",
+    "entry_type": "list",
+    "value": [
+      "black ",
+      "blue",
+      "green"
+    ]
+  }
+]

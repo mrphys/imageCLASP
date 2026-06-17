@@ -27,6 +27,7 @@
  # See the Elastic License 2.0 for specific permissions and
  # limitations under the License
 
+
 import sys
 from pathlib import Path
 import pandas as pd
@@ -94,6 +95,26 @@ if "clasp.DB_PATH" not in st.session_state:
     st.session_state["clasp.MASK_SCALER"] = 500
     st.session_state["clasp.MODELS_PATH"] = resource_path("models")
 
+
+root_path = Path(st.session_state["clasp.ROUNDEL_PATH"])
+
+data_path = root_path / "data"
+results_path = root_path / "results"
+models_path = root_path / "models"
+cache_dir = root_path / "cache"
+
+blank_gif_path = results_path / "temp" / "blank"
+edv_esv_gif_path = results_path / "temp" / "edv_esv"
+edited_gif_path = results_path / "temp" / "edited_edv_esv"
+
+# directory creation
+(data_path).mkdir(parents=True, exist_ok=True)
+(results_path / "temp").mkdir(parents=True, exist_ok=True)
+(results_path / "gifs").mkdir(parents=True, exist_ok=True)
+(results_path / "edited_sax_df").mkdir(parents=True, exist_ok=True)
+cache_dir.mkdir(parents=True, exist_ok=True)
+
+
 # ---------------------------
 # Navigation
 # ---------------------------
@@ -102,6 +123,7 @@ pg = st.navigation([
     st.Page("app_pages/1_Roundel.py", title="Roundel", icon=":material/adjust:"),
     st.Page("app_pages/2_Data_Entry.py", title="Data Entry", icon=":material/note_alt:"),
     st.Page("app_pages/3_Query.py", title="Query Data", icon=":material/description:"),
+    st.Page("app_pages/4_Stats.py", title="Statistics", icon=":material/bar_chart:"),
 ])
 
 pg.run()

@@ -1,0 +1,41 @@
+[   {
+      "parameter": "Peak VO2 (ml/min/kg)",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "VE/VCO2",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "VO2 at AT",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "RER",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "Peak HR (bpm)",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "Peak SBP (mmHg)",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "Peak workload (W)",
+      "entry_type": "numeric",
+      "value": null
+    },
+    {
+      "parameter": "Exercise duration",
+      "entry_type": "numeric",
+      "value": null
+    }
+  ]

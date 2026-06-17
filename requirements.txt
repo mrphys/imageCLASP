@@ -26,3 +26,5 @@ platformdirs==4.9.4
 prompt_toolkit==3.0.52
 protobuf==5.29.6
 psutil==7.2.2
+seaborn
+lifelines
