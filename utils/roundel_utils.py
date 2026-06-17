@@ -7,6 +7,7 @@ import numpy as np
 from skimage.measure import find_contours
 import cv2
 import json
+import torch
 from utils.reset_utils import *
 import imageio.v2 as imageio
 from datetime import datetime
@@ -17,7 +18,8 @@ from scipy.ndimage import (
     binary_fill_holes,
     binary_dilation,
     binary_erosion,
-    gaussian_filter
+    gaussian_filter,
+    zoom
 ) 
 
 root_path = Path(st.session_state["clasp.ROUNDEL_PATH"])
@@ -30,6 +32,7 @@ cache_dir = root_path / "cache"
 blank_gif_path = results_path / "temp" / "blank"
 edv_esv_gif_path = results_path / "temp" / "edv_esv"
 edited_gif_path = results_path / "temp" / "edited_edv_esv"
+preview_gif_path = results_path / "temp" / "preview"
 
 # directory creation
 (data_path).mkdir(parents=True, exist_ok=True)
@@ -177,6 +180,13 @@ def load_config(path) :
 
 def normalize(image):
     image = (image - np.min(image))/(np.max(image) - np.min(image))
+    return image
+
+def z_normalise_image(image):
+    mean = np.mean(image)
+    std = np.std(image)
+    image -= mean
+    image /= (max(std, 1e-8))
     return image
 
 def merge_masks(lv_mask, rv_mask):
@@ -807,6 +817,9 @@ def initialize_app(study):
         save_file=blank_gif_path,
     )
 
+    make_video(smoothed_image, smoothed_mask, save_file=str(preview_gif_path))
+    st.session_state['roundel.preview_gif_path'] = f'{str(preview_gif_path)}.gif'
+
     step(5/5, "Loading Roundel")
 
     gif = Image.open(f"{str(edv_esv_gif_path)}.gif")
@@ -851,7 +864,7 @@ def initialize_app(study):
     st.session_state['roundel.cached'] = cached
     st.session_state['roundel.saved'] = False
     st.session_state['roundel.initialized'] = True
-    st.session_state["roundel.view"] = 'EDV/ESV Finder 🔍'
+    st.session_state["roundel.view"] = 'Preview Segmentation 👁️'
     st.session_state['roundel.edv_esv_selected'] = {"lv_dia_idx": None, "lv_sys_idx": None, "rv_dia_idx": None, "rv_sys_idx": None,"confirmed": False}
     progress_bar.empty()
 
@@ -1046,6 +1059,16 @@ def select_brush(N, ventricle):
     return channel, action, stroke_width
 
 
+def preview_segmentation_view():
+    if not st.session_state.get('roundel.initialized'):
+        st.info("Run segmentation first to preview the result.")
+        return
+
+    st.header("Preview Segmentation")
+    _, col2, _ = st.columns([1, 2, 1])
+    with col2:
+        st.image(st.session_state['roundel.preview_gif_path'], use_container_width=True)
+
 
 def mask_editor_view():
     """Full Mask Editor layout."""
@@ -1138,10 +1161,14 @@ def mask_editor_view():
 
             st.session_state['roundel.canvas']['previous_d'] = d
 
+            _bg_key = f"roundel.bg_overlay_{ventricle}_{d}_{idx}"
+            if _bg_key not in st.session_state:
+                st.session_state[_bg_key] = get_overlay(image_slice, mask_slice, H, W, N, OVERLAY_COLORS, ventricle)
+
             canvas_result = st_canvas(
                 stroke_width=stroke_width,
                 stroke_color=stroke_color,
-                background_image=get_overlay(image_slice, mask_slice, H, W, N, OVERLAY_COLORS, ventricle),
+                background_image=st.session_state[_bg_key],
                 update_streamlit=True,
                 height = H*DISPLAY_W/W,
                 width=DISPLAY_W,
@@ -1398,17 +1425,17 @@ def final_result_view():
             combined_df = pd.DataFrame({
                 "patient_id": [patient_id],
                 "orthanc_study_id": [orthanc_study_id],
-                "exams_date": [pd.to_datetime(study_date, dayfirst=True).date()],
+                "exams_date": [pd.to_datetime(study_date, dayfirst=True).date() if study_date else None],
                 "lv_edv": [lv_edv],
                 "lv_esv": [lv_esv],
                 "lv_sv": [lv_sv],
                 "lv_ef": [lv_ef],
-                "rv_mass": [rv_mass],
+                "lv_mass": [lv_mass],
                 "rv_edv": [rv_edv],
                 "rv_esv": [rv_esv],
                 "rv_sv": [rv_sv],
                 "rv_ef": [rv_ef],
-                "rv_mass": [rv_mass],
+                "rv_mass": [rv_mass]
             })
 
             EXAMS_PATH = st.session_state["clasp.EXAMS_PATH"]
