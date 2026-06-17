@@ -5,6 +5,9 @@ import os
 import glob
 import streamlit as st
 DB_PATH = st.session_state['clasp.DB_PATH']
+DEMOGRAPHICS_PATH = st.session_state["clasp.DEMOGRAPHICS_PATH"]
+
+
 
 def fetch_db_studies():
     db = TinyDB(DB_PATH)
@@ -26,7 +29,7 @@ def fetch_db_series(study, series_orthanc_id):
     return [series for sid, series in study.series_dict.items() if sid == series_orthanc_id][0]
 
 def get_entered_patients():
-    demo_path = 'tables/demographics.csv'
+    demo_path = DEMOGRAPHICS_PATH
     if os.path.exists(demo_path):
         df = pd.read_csv(demo_path)
         entered_patients = (df.loc[df['data_entered'] == True]).patient_id
@@ -75,11 +78,15 @@ class Study:
 
         # populate from study_info if provided
         if orthanc_study_info is not None:
+
+            patient_id = orthanc_study_info["PatientMainDicomTags"].get("PatientID", 0)
+            patient_id = 0 if patient_id == "" else patient_id
+
             base = {
                 "orthanc_study_id": orthanc_study_info["ID"],
                 "study_uid": orthanc_study_info["MainDicomTags"].get("StudyInstanceUID"),
                 "patient_name": orthanc_study_info["PatientMainDicomTags"].get("PatientName"),
-                "patient_id": str(orthanc_study_info["PatientMainDicomTags"].get("PatientID")),
+                "patient_id": str(int(patient_id)),
                 "patient_sex": orthanc_study_info["PatientMainDicomTags"].get("PatientSex"),
                 "patient_dob": orthanc_study_info["PatientMainDicomTags"].get("PatientBirthDate"),
                 "study_date": orthanc_study_info["MainDicomTags"].get("StudyDate"),

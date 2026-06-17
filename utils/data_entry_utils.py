@@ -9,33 +9,37 @@ from pathlib import Path
 # ---------- Configuration ----------
 REFERENCE_PATH = st.session_state['clasp.REFERENCE_PATH'] 
 OUT_PATH = st.session_state['clasp.OUT_PATH']
-CONFIG_PATH = st.session_state["clasp.REFERENCE_PATH"] / "data_entry_forms.json"
+
 
 def load_options(label: str, group_value: str | None = None) -> list[str]:
     path = REFERENCE_PATH / f"{label.lower()}_reference.csv"
-    df = pd.read_csv(path)
-    value_col = 'value'
-    group_col= 'type'
 
-    df[value_col] = df[value_col].astype(str).str.strip()
-    if group_value is not None:
-        df[group_col] = df[group_col].astype(str).str.strip().str.lower()
+    df = pd.read_csv(path)
+
+    parameter_col = "parameter"
+    group_col = "entry_type"
+
+    df[parameter_col] = df[parameter_col].astype(str).str.strip()
+
+    # only filter if both a group value AND the column exist
+    if group_value is not None and group_col in df.columns:
+        df[group_col] = (
+            df[group_col]
+            .astype(str)
+            .str.strip()
+            .str.lower()
+        )
+
         df = df[df[group_col] == group_value.lower()]
 
-    options = df[value_col].dropna().tolist()
+    options = df[parameter_col].dropna().tolist()
+
     return options
 
-with open(CONFIG_PATH, "r") as f:
-    config = json.load(f)
 
-multi_forms = config['multi']
-single_forms = config['single']
-
-
-CLINICAL_ENTRIES = ['Demographics'] + list(multi_forms.keys()) + list(single_forms.keys())
 DEMOGRAPHICS_PATH = st.session_state['clasp.DEMOGRAPHICS_PATH']
-
 MIN_DATE = date(1900, 1, 1)
+
 
 def clear_on_patient_change():
     prev = st.session_state["data_entry.prev_patient"]
@@ -139,7 +143,7 @@ def init_patient_from_csv() -> None:
     st.session_state['data_entry.sex'] = sex if sex in ["F", "M", "Other"] else None
     st.session_state['data_entry.dob'] = dob 
 
-    for entry in CLINICAL_ENTRIES:
+    for entry in st.session_state['data_entry.CLINICAL_ENTRIES']:
         st.session_state[f'data_entry.current_{entry.lower()}'] = []
 
 
@@ -209,7 +213,7 @@ def save_data_entry():
     }])
 
 
-    for entry in CLINICAL_ENTRIES:
+    for entry in st.session_state['data_entry.CLINICAL_ENTRIES']:
         entry = entry.lower()
         if entry == 'demographics':
             upsert_demographics_csv(demographics_df, OUT_PATH /f'{entry.lower()}.csv')
@@ -226,29 +230,20 @@ def save_data_entry():
                 append_csv(df, OUT_PATH /f'{entry.lower()}.csv')
 
 
-def choose_entry_format(option_input, label, form_name, value_field):
-    key = f"data_entry.{value_field}_{form_name}"
-    if option_input == 0:
+
+def choose_entry_format(parameter, entry_type, value, label, value_field, key):
+    if entry_type == 'numeric':
         entry = st.number_input(
-            form_name,
+            parameter,
             key=key,
             value=None,
             placeholder="Enter a value"
         )
-
-    elif isinstance(option_input, str):
-        options = load_options(label, option_input)
+    
+    elif entry_type == 'list':
         entry = st.selectbox(
-            form_name,
-            options,
-            key=key,
-            index=None
-        )
-
-    else:
-        entry = st.selectbox(
-            form_name,
-            option_input,
+            parameter,
+            value,
             key=key,
             index=None
         )
@@ -266,14 +261,22 @@ def create_multi_form(
     date_field = f'{label.lower()}_date'
     cols = st.columns(len(forms))
 
-    for col, (form_name, options) in zip(cols, forms.items()):
+    for col, form_name in zip(cols, forms):
+        display_name = form_name.capitalize()
         with col:
             with st.form(f"{label}_{form_name}", clear_on_submit=True):
 
-                entry = choose_entry_format(options, label, f'{form_name} {label}', value_field)
+                options = load_options(label, form_name)
+                entry = st.selectbox(
+                    form_name,
+                    options,
+                    key=f"data_entry.{value_field}_{form_name}",
+                    index=None
+                )
+                
 
                 entry_date = st.date_input(
-                    f"Date of {form_name} {label}", 
+                    f"Date of {display_name} {label}", 
                     value=None,
                     min_value=MIN_DATE,
                     max_value=date.today(),
@@ -281,7 +284,7 @@ def create_multi_form(
                     format="DD-MM-YYYY",
                 )
 
-                if st.form_submit_button(f"Add {form_name} {label}"):
+                if st.form_submit_button(f"Add {display_name} {label}"):
                     record = {
                         "patient_id": st.session_state['data_entry.patient_id'],
                         date_field: str(entry_date),
@@ -298,11 +301,17 @@ def create_multi_form(
         columns = {col:col.replace('_',' ').title().replace('Id','ID') for col in df.columns}
         st.dataframe(df.rename(columns=columns).set_index('Patient ID'), use_container_width=True)
 
-def create_single_form(label, forms: dict, num_cols=3):
+
+def create_single_form(label, num_cols=3):
 
     state_key = f"data_entry.current_{label.lower()}"
     value_field = f"{label.lower()}_value"
     date_field = f"{label.lower()}_date"
+
+    file_path = REFERENCE_PATH/ f"{label.lower()}_reference.json"
+
+    with open(file_path, "r") as f:
+        forms_items = json.load(f)
 
     with st.form(f"{label}_form", clear_on_submit=True):
 
@@ -315,7 +324,6 @@ def create_single_form(label, forms: dict, num_cols=3):
             value=None
         )
 
-        forms_items = list(forms.items())
         n = len(forms_items)
 
         num_cols = 2 if n < 3 else 3
@@ -325,18 +333,22 @@ def create_single_form(label, forms: dict, num_cols=3):
             cols = st.columns(num_cols)
             row_items = forms_items[i*num_cols:(i+1)*num_cols]
 
-            for col, (form_name, options) in zip(cols, row_items):
+            for col, row_item in zip(cols, row_items):
+                parameter, entry_type, value = row_item.values()
+                key = f"data_entry.{value_field}_{parameter}"
+
                 with col:
-                    entry = choose_entry_format(options, label, form_name, value_field)
+                    entry = choose_entry_format(parameter, entry_type, value, label, value_field, key)
 
         if st.form_submit_button(f"Add {label}"):
             record = {
                 "patient_id": st.session_state["data_entry.patient_id"],
                 date_field: str(entry_date),
             }
-            for form_name, options in forms_items:
-                key = f"data_entry.{value_field}_{form_name}"
-                record[form_name] = st.session_state[f"data_entry.{value_field}_{form_name}"]
+            for form_item in forms_items:
+                parameter, entry_type, value = form_item.values()
+                key = f"data_entry.{value_field}_{parameter}"
+                record[parameter] = st.session_state[f"data_entry.{value_field}_{parameter}"]
                 
             add_record(
                 state_key = state_key,
@@ -345,8 +357,16 @@ def create_single_form(label, forms: dict, num_cols=3):
             )
 
     df = pd.DataFrame(st.session_state.get(state_key, []))
+
     if not df.empty:
-        columns = {c: c.replace("_", " ").title().replace("Id", "ID") for c in df.columns}
-        df = df.rename(columns=columns).set_index("Patient ID")
-        df = df.groupby(["Patient ID", f"{label} Date"]).last()
+        date_col = f"{label.lower()}_date"
+
+        df = df.groupby(["patient_id", date_col]).last().reset_index()
+
+        df = df.rename(columns={
+            "patient_id": "Patient ID",
+            date_col: f"{label} Date"
+        })
+
+        df = df.set_index("Patient ID")
         st.dataframe(df, use_container_width=True)

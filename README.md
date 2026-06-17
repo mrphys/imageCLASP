@@ -6,8 +6,6 @@
 
 The platform is designed to support federated analysis workflows, enabling hospitals and research institutions to perform statistical analysis without transferring sensitive imaging data outside institutional infrastructure.
 
-New Configurator Branch!
-
 ## Features
 
 * MRI data management and organization
