@@ -12,7 +12,8 @@ The platform is designed to support federated analysis workflows, enabling hospi
 * AI based biomarker extraction
 * Local data storage for privacy preserving research 
 * Integration with Orthanc PACS server
-* Clinical and research-oriented imaging pipelines
+* Clinical and research-oriented imaging pipelines 
+* Statistics package added
 
 ## Distribution
 
