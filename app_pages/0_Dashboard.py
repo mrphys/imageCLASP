@@ -75,17 +75,41 @@ def file_browser():
 
     current_path = st.session_state["dashboard.upload_path"]
 
-    # breadcrumbs UI
+    # bread# breadcrumbs UI
     crumbs = breadcrumbs(current_path)
-    cols = st.columns(len(crumbs), gap="small")
 
-    for i, (name, crumb_path) in enumerate(crumbs):
+    MAX_VISIBLE_CRUMBS = 4
+
+    display_crumbs = []
+
+    # Collapse leading crumbs if there are too many
+    if len(crumbs) > MAX_VISIBLE_CRUMBS:
+        hidden_count = len(crumbs) - MAX_VISIBLE_CRUMBS + 1
+
+        grouped_name = " / ".join(
+            name for name, _ in crumbs[:hidden_count]
+        )
+        grouped_path = crumbs[hidden_count - 1][1]
+
+        display_crumbs.append((grouped_name, grouped_path))
+        display_crumbs.extend(crumbs[hidden_count:])
+    else:
+        display_crumbs = crumbs
+
+    cols = st.columns([len(crumb) for crumb in display_crumbs], gap="small")
+
+    for i, (name, crumb_path) in enumerate(display_crumbs):
         with cols[i]:
             label = display_name(name)
+
             if crumb_path == current_path:
                 st.button(label, disabled=True, use_container_width=True)
             else:
-                if st.button(label, key=f"crumb_{crumb_path}", use_container_width=True):
+                if st.button(
+                    label,
+                    key=f"crumb_{crumb_path}",
+                    use_container_width=True,
+                ):
                     st.session_state["dashboard.upload_path"] = crumb_path
                     st.session_state["dashboard.prev_selected"] = set()
                     st.session_state["dashboard.multi_select_block"] = False
@@ -201,6 +225,7 @@ def upload_folders(selected_folders: str):
 
     for root_folder in selected_folders:
         root = Path(root_folder)
+        folder_name = root.name
         max_workers = get_max_workers()
 
         if not root.exists():
@@ -217,12 +242,14 @@ def upload_folders(selected_folders: str):
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = set()
+            folder_total = 0
 
             for file_path in iter_files():
                 futures.add(executor.submit(upload_orthanc_file, file_path))
                 total += 1
+                folder_total += 1
 
-            progress_bar = st.progress(0, f"## **Uploading Files:**")
+            progress_bar = st.progress(0, f"## **Uploading Files from {folder_name}:**")
 
             completed = 0
 
@@ -240,8 +267,8 @@ def upload_folders(selected_folders: str):
 
                 completed += 1
                 progress_bar.progress(
-                    completed / total, 
-                    f"## **Uploading Files:** {completed}/{total} ({completed/total:.1%})"
+                    completed / folder_total, 
+                    f"## **Uploading Files from {folder_name}:** {completed}/{folder_total} ({completed/folder_total:.1%})"
                 )
 
     num_series = len(set(series_list))
@@ -270,7 +297,7 @@ for study in studies:
     num_roundelled+=(df['roundel_orthanc_id'].notna()).any()
 
 
-pn1, pn2 = st.columns([0.75, 1.5])
+pn1, pn2 = st.columns([1.3,2])
 with pn1:
     col1, col2 = st.columns([1, 1])
 

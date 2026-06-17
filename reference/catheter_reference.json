@@ -1,0 +1,77 @@
+[
+  {
+    "parameter": "sPaP (mmHg)",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "dPaP (mmHg)",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "mPaP (mmHg)",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "PCWP (mmHg)",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "SAP (mmHg)",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "DAP (mmHg)",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "MAP (mmHg)",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "CO (l/min/m2)",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "PVRi (WU.m2)",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "SVRi (WU.m2)",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "Qp:Qs",
+    "entry_type": "numeric",
+    "value": null
+  },
+  {
+    "parameter": "Shunt entry_type",
+    "entry_type": "list",
+    "value": [
+      "None",
+      "ASD",
+      "VSD",
+      "PDA",
+      "Other"
+    ]
+  },
+  {
+    "parameter": "test",
+    "entry_type": "list",
+    "value": [
+      "test2",
+      "test3",
+      "test4"
+    ]
+  }
+]

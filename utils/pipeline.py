@@ -69,7 +69,7 @@ def sync_orthanc_and_db():
             first_name = ""
 
         new_rows.append({
-            "patient_id": study.patient_id,
+            "patient_id": str(study.patient_id),
             "first_name": first_name,
             "last_name": last_name,
             "sex": study.patient_sex,
