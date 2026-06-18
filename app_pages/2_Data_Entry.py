@@ -313,7 +313,7 @@ if configure_mode:
     # --------------------------------------------------
     # csv tables
     # --------------------------------------------------
-    elif selected_table in st.session_state['data_entry.MAIN_TABLES'].keys():
+    elif selected_table.lower() in st.session_state['data_entry.MAIN_TABLES'].keys():
 
         table_REFERENCE_PATH = (
             REFERENCE_PATH
