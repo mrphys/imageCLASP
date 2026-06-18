@@ -1,8 +1,8 @@
-# ImageCLASP
+# CLASP
 
 [![CLASP](https://img.youtube.com/vi/F4cwBQrVG_A/maxresdefault.jpg)](https://youtu.be/F4cwBQrVG_A)
 
-**ImageCLASP** (Image Content Linking with AI and Supervised Processing) is a medical imaging platform for managing MRI data and extracting clinically relevant biomarkers using AI driven analysis pipelines.
+**CLASP** (Content Linking with AI and Supervised Processing) is a medical imaging platform for managing MRI data and extracting clinically relevant biomarkers using AI driven analysis pipelines.
 
 The platform is designed to support federated analysis workflows, enabling hospitals and research institutions to perform statistical analysis without transferring sensitive imaging data outside institutional infrastructure.
 
@@ -17,11 +17,11 @@ The platform is designed to support federated analysis workflows, enabling hospi
 
 ## Distribution
 
-ImageCLASP is distributed as a standalone Windows `.exe` installer.
+CLASP is distributed as a standalone Windows `.exe` installer.
 
 The installer includes:
 
-* ImageCLASP
+* CLASP
 * Orthanc installation and configuration
 
 ## System Requirements
