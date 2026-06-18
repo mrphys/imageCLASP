@@ -60,10 +60,10 @@ rv_myo_idx = labels['RV_myo']
 
 
 BACKGROUND_COLOR = (10, 10, 10, 0) # THIS HAS TO BE NON-ZERO
-RV_MYO_COLOR = (0, 200, 10, 50)    # Green
-RV_COLOR = (255, 190, 10, 50)      # Yellow
-LV_MYO_COLOR =  (0, 255, 255, 50)  # Blue
-LV_COLOR = (255, 10, 10, 50)       # Red
+RV_MYO_COLOR = (255, 190, 10, 50)    # Yellow
+RV_COLOR = (0, 255, 255, 50)  # Blue
+LV_MYO_COLOR =  (0, 200, 10, 50)    # Green
+LV_COLOR = (255, 10, 10, 50)       # Red 
 
 
 
@@ -77,9 +77,9 @@ OVERLAY_COLORS = {
 
 
 BRUSH_LABELS = {
-    rv_myo_idx: 'RV Myocardium 🟢',
-    rv_idx: 'RV Blood Pool 🟡',
-    lv_myo_idx: 'LV Myocardium 🔵',
+    rv_myo_idx: 'RV Myocardium 🟡',
+    rv_idx: 'RV Blood Pool 🔵',
+    lv_myo_idx: 'LV Myocardium 🟢',
     lv_idx: 'LV Blood Pool 🔴',
 }
 
