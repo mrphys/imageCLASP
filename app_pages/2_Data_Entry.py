@@ -313,7 +313,9 @@ if configure_mode:
     # --------------------------------------------------
     # csv tables
     # --------------------------------------------------
-    elif selected_table.lower() in st.session_state['data_entry.MAIN_TABLES'].keys():
+    elif selected_table in [k.lower() for k in st.session_state['data_entry.MAIN_TABLES'].keys()]:
+
+        selected_table_key = next(k for k in st.session_state['data_entry.MAIN_TABLES'] if k.lower() == selected_table.lower())
 
         table_REFERENCE_PATH = (
             REFERENCE_PATH
@@ -338,7 +340,7 @@ if configure_mode:
                 column_config={
                     "entry_type": st.column_config.SelectboxColumn(
                         "entry_type",
-                        options=list(st.session_state['data_entry.MAIN_TABLES'][selected_table]),
+                        options=list(st.session_state['data_entry.MAIN_TABLES'][selected_table_key]),
                         required=True,
                     )
                 },
