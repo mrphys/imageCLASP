@@ -179,7 +179,7 @@ def sax_segmentation_pipeline(study):
         old_dcms_sorted = sorted(old_dcms, key=lambda d: int(d.InstanceNumber))
         image_2dts[sid] = np.array([ds.pixel_array for ds in old_dcms_sorted])  # T, H, W
         old_dcm_list[sid] = old_dcms_sorted
-
+        
     # Sort slices by ascending slice location
     sax_orthanc_ids = sorted(sax_orthanc_ids, key=lambda sid: slice_locations[sid])
 
@@ -197,6 +197,7 @@ def sax_segmentation_pipeline(study):
 
     # Loop through each frame of the 4D array and predict on 3D SAX
     for frame in range(image_4d.shape[1]):
+        print(f"DEBUG - Running inference on frame {frame+1}/{image_4d.shape[1]}")
         image_3d = image_4d[:, frame, :, :] # S, H, W
         image_3d = np.transpose((image_3d), (1,2,0))  # H,W,S for run inference()
         mask_4d[:, frame, :, :] = run_inference_on_scan(image_3d, pixel_spacing, frame) * st.session_state['clasp.MASK_SCALER']

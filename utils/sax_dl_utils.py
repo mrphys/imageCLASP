@@ -258,6 +258,7 @@ def run_inference_on_scan(image_3d, pixel_spacing, timestep):
     """
 
     # Apply function to preprocess the input image in the same way as training (e.g. resampling, cropping/padding, normalisation)
+    print(f"DEBUG - Preprocessing image for timestep {timestep} with pixel spacing: {pixel_spacing}")
     preprocessed_image_3d, meta = preprocess_scan_like_training(image_3d, pixel_spacing, target_shape=TARGET_SHAPE)
 
     # Transpose to put slices at end and then add channel and batch dimensions and transpose: (1, 1, H, W, S)
@@ -265,6 +266,7 @@ def run_inference_on_scan(image_3d, pixel_spacing, timestep):
 
     start = time.time()
     # Run sliding window inference 
+    print(f"DEBUG - Running sliding window inference on timestep {timestep}")
     prob_map, _ = monai_sliding_window_inference_3d(
             model, X,
             patch_size=(256, 256, 10),
@@ -274,6 +276,7 @@ def run_inference_on_scan(image_3d, pixel_spacing, timestep):
             tta=device.type == 'cuda', # Apply test-time augmentation (TTA) if using GPU for inference, else run without TTA for speed on CPU
             deep_supervision=True,
         )
+    print(f"DEBUG - Completed inference on timestep {timestep}, prob_map shape: {prob_map.shape}")
 
     # Convert predicted probability map to discrete labels, reverse the cropping/padding, and resample back to native spacing
     pred_mask = np.argmax(prob_map, axis=-1).astype(np.uint8)

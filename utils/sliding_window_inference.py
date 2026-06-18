@@ -295,8 +295,8 @@ def monai_sliding_window_inference_3d(
     """
     from monai.inferers import sliding_window_inference as monai_swi
 
-    # print("MONAI-based sliding window inference")
-    # print("Input volume shape:", volume.shape)
+    print("MONAI-based sliding window inference")
+    print("Input volume shape:", volume.shape)
     assert volume.ndim == 5 and volume.shape[1] >= 1, "Expected [B,C,Z,Y,X]"
     
     # volume is [B,C,Z,Y,X] - MONAI expects this format
@@ -316,6 +316,7 @@ def monai_sliding_window_inference_3d(
     
     # TTA loop
     for axes_mask in _iter_tta_axes(tta):
+        print(f"Running TTA pass with axes_mask: {axes_mask}")
         # axes_mask is (flip_Y, flip_X, flip_Z) over spatial dims of [B,C,Z,Y,X]
         # tensor dims are: Z=2, Y=3, X=4
         
@@ -348,6 +349,7 @@ def monai_sliding_window_inference_3d(
                     category=UserWarning,
                     module=r"monai\.inferers\.utils",
                 )
+                print(f"Running MONAI sliding window inference with roi_size={roi_size}, sw_batch_size={sw_batch_size}, overlap={overlap}")
                 pred_aug = monai_swi(
                     inputs=volume_aug,
                     roi_size=roi_size,
@@ -358,6 +360,7 @@ def monai_sliding_window_inference_3d(
                     sigma_scale=gaussian_sigma_scale,
                     padding_mode='reflect',
                 )  # [B, C_out, Z, Y, X]
+                print(f"Completed MONAI sliding window inference for TTA pass with axes_mask: {axes_mask}, output shape: {pred_aug.shape}")
         
         # Unflip back to original orientation (reverse the flips)
         pred_unflipped = pred_aug.clone()
