@@ -61,6 +61,16 @@ sudo apt install orthanc
 sudo systemctl start orthanc
 ```
 
+Download the view classification and segmentation models:
+If not using the exe distribution, the ML models for automatically identifying short-axis (SAX) Cine scans, and performing biventricular segmentation need to be downloaded and place in a models/ folder in the root directory. 
+
+The models can be downloaded from this link: https://drive.google.com/file/d/1wawDKOSKjV_KwBvrvZA2xtA3zKGyfbV5/view?usp=sharing
+
+The zip file should be unzipped, and the following models placed into a models/ folder: 
+- view_classification-35.pth
+- SAX-Seg-186.pth
+
+
 ### Orthanc Integration
 
 ImageCLASP uses Orthanc as the underlying DICOM server for MRI data storage and communication. Orthanc is an open-source, lightweight DICOM server designed to facilitate medical imaging workflows and interoperability. For further details, see [The Orthanc Ecosystem for Medical Imaging](https://link.springer.com/article/10.1007/s10278-018-0082-y).
