@@ -14,7 +14,7 @@ from .sliding_window_inference import *
 import streamlit as st
 
 # ---- User-configurable paths ----
-MODEL_PATH = f"{st.session_state['clasp.MODELS_PATH']}/SAX-Seg-186.pth" # Use lightweight 3D SAX model for speed
+MODEL_PATH = f"{st.session_state['clasp.MODELS_PATH']}/lightweight_initial_unet_model.pth" # Use lightweight 3D SAX model for speed
 PLOTS_PATH = Path(st.session_state['clasp.MODELS_PATH']).parent / "plots"
 TARGET_SHAPE = (256, 256)
 NUM_CLASSES = 5
