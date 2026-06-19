@@ -62,6 +62,7 @@ sudo systemctl start orthanc
 ```
 
 Download the view classification and segmentation models:    
+
 If not using the exe distribution, the ML models for automatically identifying short-axis (SAX) Cine scans, and performing biventricular segmentation need to be downloaded and place in a models/ folder in the root directory. 
 
 The models can be downloaded from this link: https://drive.google.com/file/d/1wawDKOSKjV_KwBvrvZA2xtA3zKGyfbV5/view?usp=sharing
